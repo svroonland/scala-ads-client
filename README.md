@@ -21,3 +21,31 @@ TODO
 ## Notifications
 
 ## Writing
+
+## Custom datatypes
+By declaring an `AdsCodec[T]` for your custom type T, the `AdsClient` can properly serialize and deserialize values of type `T` to the PLC data representation. You can compose a new codec existing ones by using the following syntax.
+
+As an example, assume that in the PLC code a `STRUCT` with 3 members is defined:
+```
+TYPE MyCustomType:
+STRUCT
+  a: INT := 1;
+  b: INT := 1;
+  c: BOOL := FALSE;
+END_STRUCT
+END_TYPE
+```
+
+Define the codec on the Scala side as follows:
+
+```scala
+import cats.syntax.apply._
+import com.vroste.adsclient.DefaultReadables._
+import com.vroste.adsclient.DefaultWritables._
+
+case class MyCustomType(a: Int, b: Int, c: Boolean)
+
+implicit val myCustomTypeCodec: AdsCodec[MyCustomType] =
+  (AdsCodec.of[Int], AdsCodec.of[Int], AdsCodec.of[Boolean])
+    .imapN(MyCustomType.apply)(Function.unlift(MyCustomType.unapply))
+```
