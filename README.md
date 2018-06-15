@@ -14,13 +14,58 @@ This is a Scala-native reactive client for [Beckhoff TwinCAT PLC](http://www.bec
 Built on top of [monix](https://github.com/monix/monix), [monix-nio](https://github.com/monix/monix-nio) and [cats](https://github.com/typelevel/cats).
 
 # Documentation
-TODO
 
 ## Connect
+The `AdsClient` object provides a `connect` method which will asynchronously connect to 
+```scala
+val settings = AdsConnectionSettings(...)
+val clientT: Task[AdsClient] = AdsClient.connect(settings)
+
+// Example, in a real application you should flatMap the task
+clientT.runOnComplete {
+ case Success(adsClient) => // Do stuff with the client
+ ...
+}
+```
+
+## Reading
+To read a PLC variable once:
+```
+val client: AdsClient
+val result: Task[Int] = client.read[Int]("MAIN.myIntegerVar")
+```
 
 ## Notifications
+Instead of reading once, the recommended way to read is to make use of ADS Notifications of changes to a PLC variable. The `AdsClient` offers these as an `Observable`.
+
+```scala
+val notifications: Observable[AdsNotification[Int]] = client.notificationsFor[Int]("MAIN.myIntegerVar")
+
+// Perform further operations on this observable, such as filtering, mapping, joining with observables
+// for other PLC variables, etc. 
+
+notifications.subscribe(Consumer.foreach(value => println(s"Got value ${value.value} at timestamp ${value.timestamp}"))
+```
+
+Note that the notifications are registered for each `subscribe()` and that they are only created upon subscription. The notification is ended when the subscription stops.
 
 ## Writing
+The ADS client provides a method for writing to a PLC variable once. This methods returns a task which is completed when the write is complete.
+```scala
+val writeComplete: Task[Unit] = client.write("MAIN.myIntegerVar", 5)
+```
+
+## Writing an Observable
+When you have an `Observable` of values and you want to write to a PLC variable for each emitted value, use the following:
+```scala
+val strings = Observable.interval(15.seconds)
+    .take(10)
+    .map(value => s"The next value is ${value}")
+    
+val consumer = client.consumerFor[String]("MAIN.myStringVar")
+
+val done: Task[Unit] = strings.consumeWith(consumer)
+```
 
 ## Custom datatypes
 By declaring an `AdsCodec[T]` for your custom type T, the `AdsClient` can properly serialize and deserialize values of type `T` to the PLC data representation. You can compose a new codec existing ones by using the following syntax.
