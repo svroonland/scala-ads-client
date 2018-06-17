@@ -1,6 +1,6 @@
 package com.vroste.adsclient.codec
 
-import java.nio.ByteBuffer
+import java.nio.{ByteBuffer, ByteOrder}
 
 object DefaultWritables {
   // BYTE
@@ -35,9 +35,7 @@ object DefaultWritables {
     override def size(value: Array[T]): Int            = value.map(writableT.size).sum
   }
 
-  // TODO TIME, TIME_OF_DAY, DATE, DATE_AND_TIME,
-
-  def orderedEnum[T](vals: T*): AdsWritable[T] = ???
+  // TODO TIME, TIME_OF_DAY, DATE, DATE_AND_TIME, ENUMcomp
 
   def withByteBuffer[T](size: Int)(f: (ByteBuffer, T) => ByteBuffer): AdsWritable[T] = AdsWritable[T](_ => size) {
     value =>

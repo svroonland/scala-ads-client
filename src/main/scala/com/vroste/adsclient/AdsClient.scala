@@ -1,5 +1,6 @@
 package com.vroste.adsclient
 
+import java.nio.ByteBuffer
 import java.time.Instant
 
 import com.vroste.adsclient.codec.{AdsReadable, AdsWritable}
@@ -96,14 +97,21 @@ object AdsTransmissionMode {
 
 }
 
-case class AmsNetId(value: Array[Byte]) extends AnyVal {
-  def bytes: Array[Byte] = value
+case class AmsNetId(value: String) extends AnyVal {
+  def bytes: Array[Byte] = {
+    val bb = ByteBuffer.allocate(6)
+    value.split('.')
+      .map(_.toInt.toByte)
+      .foreach(bb.put)
+    bb.array()
+  }
 
-  def asString: String = value.map(_.toInt.toString).mkString(".")
+  def asString: String = value
 }
 
 object AmsNetId {
-  def fromString(value: String): AmsNetId = AmsNetId(value.split('.').flatMap(_.getBytes))
+  def fromBytes(value: Array[Byte]): AmsNetId = AmsNetId(value.map(_.toChar.toString).mkString("."))
+  def fromString(value: String): AmsNetId = AmsNetId(value)
 }
 
 case class VariableHandle(value: Int) extends AnyVal

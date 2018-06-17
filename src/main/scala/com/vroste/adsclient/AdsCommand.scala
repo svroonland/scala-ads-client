@@ -1,6 +1,6 @@
 package com.vroste.adsclient
 
-import java.nio.ByteBuffer
+import java.nio.{ByteBuffer, ByteOrder}
 
 import com.vroste.adsclient.AdsResponse.{AdsAddDeviceNotificationCommandResponse, AdsDeleteDeviceNotificationCommandResponse, AdsReadCommandResponse, AdsWriteReadCommandResponse}
 import com.vroste.adsclient.AdsTransmissionMode.{Cyclic, OnChange}
@@ -42,11 +42,11 @@ object AdsCommand {
   }
 
   def commandId(c: AdsCommand): Short = c match {
-    case AdsReadCommand(_, _, _)                           => 2
-    case AdsWriteCommand(_, _, _)                          => 3
-    case AdsAddDeviceNotificationCommand(_, _, _, _, _, _) => 6
-    case AdsDeleteDeviceNotificationCommand(_)             => 7
-    case AdsWriteReadCommand(_, _, _, _)                   => 9
+    case AdsReadCommand(_, _, _)                           => 0x0002
+    case AdsWriteCommand(_, _, _)                          => 0x0003
+    case AdsAddDeviceNotificationCommand(_, _, _, _, _, _) => 0x0006
+    case AdsDeleteDeviceNotificationCommand(_)             => 0x0007
+    case AdsWriteReadCommand(_, _, _, _)                   => 0x0009
   }
 
   /***
@@ -55,10 +55,17 @@ object AdsCommand {
     */
   def getBytes(c: AdsCommand): Array[Byte] = c match {
     case AdsReadCommand(indexGroup, indexOffset, readLength) =>
-      ByteBuffer.allocate(12).putInt(indexGroup).putInt(indexOffset).putInt(readLength).array
+      ByteBuffer
+        .allocate(12)
+        .order(ByteOrder.LITTLE_ENDIAN)
+        .putInt(indexGroup)
+        .putInt(indexOffset)
+        .putInt(readLength)
+        .array
     case AdsWriteCommand(indexGroup, indexOffset, values) =>
       ByteBuffer
         .allocate(12 + values.length)
+        .order(ByteOrder.LITTLE_ENDIAN)
         .putInt(indexGroup)
         .putInt(indexOffset)
         .putInt(values.length)
@@ -67,6 +74,7 @@ object AdsCommand {
     case AdsWriteReadCommand(indexGroup, indexOffset, values, readLength) =>
       ByteBuffer
         .allocate(16 + values.length)
+        .order(ByteOrder.LITTLE_ENDIAN)
         .putInt(indexGroup)
         .putInt(indexOffset)
         .putInt(readLength)
@@ -76,6 +84,7 @@ object AdsCommand {
     case AdsAddDeviceNotificationCommand(indexGroup, indexOffset, readLength, transmissionMode, maxDelay, cycleTime) =>
       ByteBuffer
         .allocate(40)
+        .order(ByteOrder.LITTLE_ENDIAN)
         .putInt(indexGroup)
         .putInt(indexOffset)
         .putInt(readLength)
@@ -85,6 +94,8 @@ object AdsCommand {
         .put(ByteBuffer.allocateDirect(16)) // Reserved bytes
         .array
     case AdsDeleteDeviceNotificationCommand(notificationHandle) =>
-      ByteBuffer.allocate(4).putInt(notificationHandle).array()
+      ByteBuffer.allocate(4)
+        .order(ByteOrder.LITTLE_ENDIAN)
+        .putInt(notificationHandle).array()
   }
 }

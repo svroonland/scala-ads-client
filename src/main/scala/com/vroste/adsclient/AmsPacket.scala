@@ -1,14 +1,15 @@
 package com.vroste.adsclient
 
-import java.nio.ByteBuffer
+import java.nio.{ByteBuffer, ByteOrder}
 
 case class AmsPacket(amsHeader: AmsHeader, data: Array[Byte]) {
   def toBytes: Array[Byte] = {
     val headerBytes         = amsHeader.getBytes(data.length)
-    val headerAndDataLength = headerBytes.size + data.length
+    val headerAndDataLength = headerBytes.length + data.length
 
     ByteBuffer
       .allocate(6 + headerAndDataLength)
+      .order(ByteOrder.LITTLE_ENDIAN)
       .put(0.toByte)
       .put(0.toByte)
       .putInt(headerAndDataLength)
@@ -16,6 +17,8 @@ case class AmsPacket(amsHeader: AmsHeader, data: Array[Byte]) {
       .put(data)
       .array()
   }
+
+  def debugString: String = toBytes.map("%02X" format _).mkString(" ")
 }
 
 object AmsPacket {

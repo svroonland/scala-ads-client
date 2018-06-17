@@ -17,9 +17,9 @@ import scala.reflect.ClassTag
 import scala.util.Try
 
 case class AdsConnectionSettings(amsNetIdTarget: AmsNetId,
-                                 amsPortTarget: Short,
+                                 amsPortTarget: Int,
                                  amsNetIdSource: AmsNetId,
-                                 amsPortSource: Short,
+                                 amsPortSource: Int,
                                  hostname: String,
                                  port: Int)
 
@@ -32,7 +32,7 @@ case class AdsNotificationSampleWithTimestamp(handle: Int, timestamp: Instant, d
   *
   * @param scheduler Execution context for reading responses
   */
-private class AdsCommandClient(settings: AdsConnectionSettings, socketClient: AsyncSocketChannelClient)(
+/* private */ class AdsCommandClient(settings: AdsConnectionSettings, socketClient: AsyncSocketChannelClient)(
     implicit scheduler: Scheduler) {
   def getVariableHandle(varName: String): Task[VariableHandle] = {
     val command = AdsWriteReadCommand(0x0000F003, 0x00000000, asAdsString(varName), DefaultReadables.intReadable.size)
@@ -96,7 +96,7 @@ private class AdsCommandClient(settings: AdsConnectionSettings, socketClient: As
           amsNetIdSource = settings.amsNetIdSource,
           amsPortSource = settings.amsPortSource,
           commandId = AdsCommand.commandId(command),
-          stateFlags = ???,
+          stateFlags = 4,
           errorCode = 0,
           invokeId = invokeId
         ),
@@ -105,8 +105,9 @@ private class AdsCommandClient(settings: AdsConnectionSettings, socketClient: As
 
       val writeCommand = socketClient.tcpConsumer
         .flatMap { consumer =>
-          consumer.apply(Observable.pure(packet.toBytes))
-        }
+          println(s"Running command ${packet.debugString}")
+          consumer.apply(Observable.pure(packet.toBytes) ++ Observable.pure(packet.toBytes))
+        }.doOnFinish { r => Task.eval(println(s"Done running command with result ${r}"))}
 
       val classTag = implicitly[ClassTag[R]]
 
@@ -133,11 +134,14 @@ private class AdsCommandClient(settings: AdsConnectionSettings, socketClient: As
   private lazy val tcpObservable: Task[Observable[Array[Byte]]] =
     socketClient.tcpObservable
       .map(_.share) // Needed to avoid closing when the observable's subscription completes
+    .map(_.doOnTerminate(reason => s"Stopping with reason ${reason}"))
       .memoize // Needed to avoid creating the observable more than once
 
   private val receivedPackets: Observable[AmsPacket] = Observable
     .fromTask(tcpObservable)
     .flatten
+    .doOnError(e => s"Receive erro ${e}")
+    .doOnNext(bytes => println(s"Got packet ${bytes}"))
     .map(AmsPacket.fromBytes) // TODO is an Array[Byte] always a complete packet, or a partial packet?
 
   // Observable of all responses from the ADS server

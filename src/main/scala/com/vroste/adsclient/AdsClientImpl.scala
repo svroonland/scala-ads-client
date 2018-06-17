@@ -9,7 +9,9 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
   override def read[T: AdsReadable](varName: String): Task[T] = {
     val readable = implicitly[AdsReadable[T]]
     for {
+      _ <- Task.eval(println("Getting variable handle"))
       varHandle <- client.getVariableHandle(varName)
+      _ <- Task.eval(println(s"Got variable handle ${varHandle}"))
       data <- client
         .readVariable(varHandle, readable.size)
         .doOnFinish { _ =>
