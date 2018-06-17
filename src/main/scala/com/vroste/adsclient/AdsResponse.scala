@@ -9,17 +9,21 @@ import scodec.codecs._
   *
   * Mostly responses to commands, but also autonomously sent notifications
   */
-sealed trait AdsResponse
+sealed trait AdsResponse {
+  val errorCode: Long
+}
 
 object AdsResponse {
   case class AdsAddDeviceNotificationCommandResponse(errorCode: Long, notificationHandle: Long) extends AdsResponse
   case class AdsDeleteDeviceNotificationCommandResponse(errorCode: Long)                       extends AdsResponse
   case class AdsWriteCommandResponse(errorCode: Long)                                          extends AdsResponse
   case class AdsReadCommandResponse(errorCode: Long, data: ByteVector)                        extends AdsResponse
-  case class AdsWriteReadCommandResponse(data: ByteVector)                                   extends AdsResponse
+  case class AdsWriteReadCommandResponse(errorCode: Long, data: ByteVector)                                   extends AdsResponse
 //  case class AdsReadDeviceInfoCommandResponse(errorCode: Int, deviceInfo: AdsDeviceInfo)      extends AdsResponse
 //  case class AdsReadStateCommandResponse(errorCode: Int, state: AdsState, deviceState: Short) extends AdsResponse
-  case class AdsNotificationResponse(stamps: List[AdsStampHeader])                             extends AdsResponse
+  case class AdsNotificationResponse(stamps: List[AdsStampHeader])                             extends AdsResponse {
+    override val errorCode: Long = 0
+  }
 
   val uint32LAsInt = uint32L.xmap[Int](_.toInt, _.toLong)
 
@@ -27,7 +31,7 @@ object AdsResponse {
     (uint32L :: variableSizeBytesLong("length" | uint32L, bytes)).as
 
   val adsWriteReadCommandResponseCodec: Codec[AdsWriteReadCommandResponse] =
-    variableSizeBytesLong("length" | uint32L, bytes).as
+    (uint32L :: variableSizeBytesLong("length" | uint32L, bytes)).as
 
   val adsWriteCommandResponseCodec: Codec[AdsWriteCommandResponse] =
     uint32L.as

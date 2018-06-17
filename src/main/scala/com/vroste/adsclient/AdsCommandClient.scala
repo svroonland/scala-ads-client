@@ -1,18 +1,18 @@
 package com.vroste.adsclient
 
-import java.time.{Duration, Instant}
 import java.time.temporal.ChronoUnit
+import java.time.{Duration, Instant}
 import java.util.concurrent.atomic.AtomicInteger
 
-import AdsResponse._
 import com.vroste.adsclient.AdsCommand._
+import com.vroste.adsclient.AdsResponse._
 import com.vroste.adsclient.codec.{DefaultReadables, DefaultWritables}
 import monix.eval.Task
 import monix.execution.Scheduler
 import monix.nio.tcp.AsyncSocketChannelClient
 import monix.reactive.Observable
 import scodec.Codec
-import scodec.bits.{BitVector, ByteVector}
+import scodec.bits.{BitVector, ByteOrdering, ByteVector}
 
 import scala.reflect.ClassTag
 import scala.util.Try
@@ -42,14 +42,16 @@ case class AdsNotificationSampleWithTimestamp(handle: Long, timestamp: Instant, 
     for {
       response <- runCommand[AdsWriteReadCommand, AdsWriteReadCommandResponse](command)
       handle <- Task.fromTry(Try {
-        response.data.toInt(signed = false)
+        response.data.toLong(signed = false, ordering = ByteOrdering.LittleEndian)
       })
     } yield VariableHandle(handle)
   }
 
+  def encodeError[T]: T = throw new IllegalArgumentException("Unable to encode")
+
   def releaseVariableHandle(handle: VariableHandle): Task[Unit] = {
     runCommand[AdsWriteCommand, AdsWriteCommandResponse] {
-      AdsWriteCommand(0x0000F006, 0x00000000, Array(handle.value.toByte))
+      AdsWriteCommand(0x0000F006, 0x00000000, scodec.codecs.uint32L.encode(handle.value).getOrElse(encodeError).toByteArray)
     }.map(_ => ())
   }
 
@@ -113,19 +115,27 @@ case class AdsNotificationSampleWithTimestamp(handle: Long, timestamp: Instant, 
 
       val classTag = implicitly[ClassTag[R]]
 
+      import scala.concurrent.duration._
+
       val receiveResponse = receivedPackets
         .filter(_.header.invokeId == invokeId)
         .flatMap(_.header.data match {
           case Right(r) if r.getClass == classTag.runtimeClass =>
+            println(s"Got expected response ${r}")
             Observable.pure(r.asInstanceOf[R])
           case r =>
+            println("nope, error reading response")
             Observable.raiseError(
               new IllegalArgumentException(s"Expected response for command ${command}, got response $r"))
         })
         .firstL
+          .asyncBoundary
+          .timeout(5.seconds)
 
       // Execute in parallel to avoid race conditions. Or can we be sure we don't need this? TODO
-      Task.parMap2(writeCommand, receiveResponse) { case (_, response) => response }
+      val r = Task.parMap2(writeCommand, receiveResponse) { case (_, response) => response }
+
+      r.flatMap( r => if (r.errorCode != 0L) Task.raiseError(new IllegalArgumentException(s"ADS error ${r.errorCode}")) else Task.pure(r))
     }
   }
 
@@ -136,16 +146,22 @@ case class AdsNotificationSampleWithTimestamp(handle: Long, timestamp: Instant, 
 
   private lazy val tcpObservable: Task[Observable[Array[Byte]]] =
     socketClient.tcpObservable
-      .map(_.share) // Needed to avoid closing when the observable's subscription completes
-      .map(_.doOnTerminate(reason => s"Stopping with reason ${reason}"))
+//      .map(_.replay(1).asyncBoundary(OverflowStrategy.DropOld(100))) // Needed to avoid closing when the observable's subscription completes
+        .map(_.share)
+      .map(_.doOnTerminate(reason => println(s"Stopping with reason ${reason}")))
+      .map(_.doOnEarlyStop(() => println(s"TCP Observable STOPPED early")))
       .memoize // Needed to avoid creating the observable more than once
 
-  private val receivedPackets: Observable[AmsPacket] = Observable
+  private lazy val receivedPackets: Observable[AmsPacket] = Observable
     .fromTask(tcpObservable)
     .flatten
-    .doOnError(e => s"Receive erro ${e}")
-    .doOnNext(bytes => println(s"Got packet ${bytes}"))
-    .map(bytes => Codec[AmsPacket].asDecoder.decode(BitVector(bytes)).getOrElse(throw new IllegalArgumentException("Decode error")).value)
+    .map(ByteVector.apply)
+    .doOnNext(bytes => println(s"Received packet ${bytes.toHex}"))
+    .map(bytes => Codec[AmsPacket].asDecoder.decode(BitVector(bytes)))
+    .doOnNext(p => println(s"Decoded packet ${p}"))
+    .map(_.getOrElse(throw new IllegalArgumentException("Decode error")).value)
+    .doOnError(e => println(s"Receive error: ${e}"))
+    .share
   // TODO is an Array[Byte] always a complete packet, or a partial packet?
 
   // Observable of all responses from the ADS server
@@ -154,7 +170,7 @@ case class AdsNotificationSampleWithTimestamp(handle: Long, timestamp: Instant, 
       .map(_.header.data.toSeq)
       .flatMap(Observable.fromIterable)
 
-  val notificationSamples: Observable[AdsNotificationSampleWithTimestamp] =
+  lazy val notificationSamples: Observable[AdsNotificationSampleWithTimestamp] =
     responses
       .collect { case r@AdsNotificationResponse(_) => r }
       .map { r =>
@@ -172,6 +188,8 @@ case class AdsNotificationSampleWithTimestamp(handle: Long, timestamp: Instant, 
     val duration = Duration.of(fileTime / 10, ChronoUnit.MICROS).plus(fileTime % 10 * 100, ChronoUnit.NANOS)
     timestampZero.plus(duration)
   }
+
+  val receiveSubscription = receivedPackets.subscribe()
 }
 
 object AdsCommandClient {
