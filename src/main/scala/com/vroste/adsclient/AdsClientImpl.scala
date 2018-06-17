@@ -60,7 +60,7 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
       client.notificationSamples
         .filter(_.handle == handle.value)
         .map { sample =>
-          val data = readable.fromBytes(sample.data)
+          val data = readable.fromBytes(sample.data.toArray)
           AdsNotification(data, sample.timestamp)
         }
     }

@@ -1,6 +1,5 @@
 package com.vroste.adsclient
 
-import java.nio.ByteBuffer
 import java.time.{Duration, Instant}
 import java.time.temporal.ChronoUnit
 import java.util.concurrent.atomic.AtomicInteger
@@ -13,7 +12,7 @@ import monix.execution.Scheduler
 import monix.nio.tcp.AsyncSocketChannelClient
 import monix.reactive.Observable
 import scodec.Codec
-import scodec.bits.BitVector
+import scodec.bits.{BitVector, ByteVector}
 
 import scala.reflect.ClassTag
 import scala.util.Try
@@ -23,9 +22,9 @@ case class AdsConnectionSettings(amsNetIdTarget: AmsNetId,
                                  amsNetIdSource: AmsNetId,
                                  amsPortSource: Int,
                                  hostname: String,
-                                 port: Int)
+                                 port: Int = 48898)
 
-case class AdsNotificationSampleWithTimestamp(handle: Int, timestamp: Instant, data: Array[Byte])
+case class AdsNotificationSampleWithTimestamp(handle: Long, timestamp: Instant, data: ByteVector)
 
 /**
   * Exposes individual ADS commands as Tasks and all device notifications as an Observable
@@ -35,14 +34,15 @@ case class AdsNotificationSampleWithTimestamp(handle: Int, timestamp: Instant, d
   * @param scheduler Execution context for reading responses
   */
 /* private */ class AdsCommandClient(settings: AdsConnectionSettings, socketClient: AsyncSocketChannelClient)(
-    implicit scheduler: Scheduler) {
+  implicit scheduler: Scheduler) {
+  import AdsCommandClient._
   def getVariableHandle(varName: String): Task[VariableHandle] = {
-    val command = AdsWriteReadCommand(0x0000F003, 0x00000000, asAdsString(varName), DefaultReadables.intReadable.size)
+    val command = AdsWriteReadCommand(0x0000F003, 0x00000000, DefaultReadables.intReadable.size, asAdsString(varName))
 
     for {
       response <- runCommand[AdsWriteReadCommand, AdsWriteReadCommandResponse](command)
       handle <- Task.fromTry(Try {
-        ByteBuffer.wrap(response.data).getInt
+        response.data.toInt(signed = false)
       })
     } yield VariableHandle(handle)
   }
@@ -59,11 +59,11 @@ case class AdsNotificationSampleWithTimestamp(handle: Int, timestamp: Instant, d
                             cycleTime: Int): Task[NotificationHandle] =
     runCommand[AdsAddDeviceNotificationCommand, AdsAddDeviceNotificationCommandResponse] {
       AdsAddDeviceNotificationCommand(0x0000F005,
-                                      variableHandle.value,
-                                      length,
-                                      AdsTransmissionMode.OnChange,
-                                      maxDelay,
-                                      cycleTime)
+        variableHandle.value,
+        length,
+        AdsTransmissionMode.OnChange,
+        maxDelay,
+        cycleTime)
     }.map(_.notificationHandle)
       .map(NotificationHandle)
 
@@ -80,32 +80,28 @@ case class AdsNotificationSampleWithTimestamp(handle: Int, timestamp: Instant, d
   def readVariable(variableHandle: VariableHandle, size: Int): Task[Array[Byte]] =
     runCommand[AdsReadCommand, AdsReadCommandResponse] {
       AdsReadCommand(0x0000F005, variableHandle.value, size)
-    }.map(_.data)
+    }.map(_.data.toArray)
 
   def close(): Task[Unit] = socketClient.close()
-
-  private def asAdsString(value: String): Array[Byte] = DefaultWritables.stringWritable.toBytes(value)
 
   /**
     * Run a command, await the response to the command and return it
     */
-  private def runCommand[T <: AdsCommand, R <: AdsResponse: ClassTag](command: T): Task[R] = {
+  private def runCommand[T <: AdsCommand, R <: AdsResponse : ClassTag](command: T): Task[R] = {
     generateInvokeId.flatMap { invokeId =>
-      val commandData = AdsCommand.getBytes(command)
       val header = AmsHeader(
-          amsNetIdTarget = settings.amsNetIdTarget,
-          amsPortTarget = settings.amsPortTarget,
-          amsNetIdSource = settings.amsNetIdSource,
-          amsPortSource = settings.amsPortSource,
-          commandId = AdsCommand.commandId(command),
-          stateFlags = 4,
-          dataLength = commandData.length,
-          errorCode = 0,
-          invokeId = invokeId,
-          data = commandData
-        )
-      // TODO can we do this using scodec?
-      val packet = AmsPacket(32 + commandData.length, header)
+        amsNetIdTarget = settings.amsNetIdTarget,
+        amsPortTarget = settings.amsPortTarget,
+        amsNetIdSource = settings.amsNetIdSource,
+        amsPortSource = settings.amsPortSource,
+        commandId = AdsCommand.commandId(command),
+        stateFlags = 4,
+        errorCode = 0,
+        invokeId = invokeId,
+        data = Left(command)
+      )
+      val packet = AmsPacket(header)
+
       val bytes = Codec[AmsPacket].encode(packet).getOrElse(throw new IllegalArgumentException("Unable to encode packet"))
         .toByteArray
 
@@ -113,14 +109,14 @@ case class AdsNotificationSampleWithTimestamp(handle: Int, timestamp: Instant, d
         .flatMap { consumer =>
           println(s"Running command ${packet.debugString}")
           consumer.apply(Observable.pure(bytes))
-        }.doOnFinish { r => Task.eval(println(s"Done running command with result ${r}"))}
+        }.doOnFinish { r => Task.eval(println(s"Done running command with result ${r}")) }
 
       val classTag = implicitly[ClassTag[R]]
 
       val receiveResponse = receivedPackets
         .filter(_.header.invokeId == invokeId)
-        .flatMap(AdsResponse.fromPacket(_) match {
-          case r if r.getClass == classTag.runtimeClass =>
+        .flatMap(_.header.data match {
+          case Right(r) if r.getClass == classTag.runtimeClass =>
             Observable.pure(r.asInstanceOf[R])
           case r =>
             Observable.raiseError(
@@ -134,12 +130,14 @@ case class AdsNotificationSampleWithTimestamp(handle: Int, timestamp: Instant, d
   }
 
   private val lastInvokeId: AtomicInteger = new AtomicInteger(1)
-  private val generateInvokeId: Task[Int] = Task.eval { lastInvokeId.getAndIncrement() }
+  private val generateInvokeId: Task[Int] = Task.eval {
+    lastInvokeId.getAndIncrement()
+  }
 
   private lazy val tcpObservable: Task[Observable[Array[Byte]]] =
     socketClient.tcpObservable
       .map(_.share) // Needed to avoid closing when the observable's subscription completes
-    .map(_.doOnTerminate(reason => s"Stopping with reason ${reason}"))
+      .map(_.doOnTerminate(reason => s"Stopping with reason ${reason}"))
       .memoize // Needed to avoid creating the observable more than once
 
   private val receivedPackets: Observable[AmsPacket] = Observable
@@ -153,11 +151,12 @@ case class AdsNotificationSampleWithTimestamp(handle: Int, timestamp: Instant, d
   // Observable of all responses from the ADS server
   private lazy val responses: Observable[AdsResponse] =
     receivedPackets
-      .map(AdsResponse.fromPacket)
+      .map(_.header.data.toSeq)
+      .flatMap(Observable.fromIterable)
 
   val notificationSamples: Observable[AdsNotificationSampleWithTimestamp] =
     responses
-      .collect { case r @ AdsNotificationResponse(_) => r }
+      .collect { case r@AdsNotificationResponse(_) => r }
       .map { r =>
         for {
           stamp <- r.stamps
@@ -173,4 +172,9 @@ case class AdsNotificationSampleWithTimestamp(handle: Int, timestamp: Instant, d
     val duration = Duration.of(fileTime / 10, ChronoUnit.MICROS).plus(fileTime % 10 * 100, ChronoUnit.NANOS)
     timestampZero.plus(duration)
   }
+}
+
+object AdsCommandClient {
+  private[adsclient] def asAdsString(value: String): Array[Byte] = DefaultWritables.stringWritable.toBytes(value)
+
 }

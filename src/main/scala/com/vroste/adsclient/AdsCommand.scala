@@ -1,101 +1,86 @@
 package com.vroste.adsclient
 
-import java.nio.{ByteBuffer, ByteOrder}
-
 import com.vroste.adsclient.AdsResponse.{AdsAddDeviceNotificationCommandResponse, AdsDeleteDeviceNotificationCommandResponse, AdsReadCommandResponse, AdsWriteReadCommandResponse}
-import com.vroste.adsclient.AdsTransmissionMode.{Cyclic, OnChange}
+import scodec.{Attempt, Codec, Err}
+import scodec.bits.ByteVector
 
 /**
   * Commands to the ADS server
   */
-sealed trait AdsCommand { self =>
+sealed trait AdsCommand {
+  self =>
   type ResponseType
 }
 
 object AdsCommand {
-
-  case class AdsReadCommand(indexGroup: Int, indexOffset: Int, readLength: Int) extends AdsCommand {
+  case class AdsReadCommand(indexGroup: Long, indexOffset: Long, readLength: Long) extends AdsCommand {
     override type ResponseType = AdsReadCommandResponse
   }
 
-  case class AdsWriteCommand(indexGroup: Int, indexOffset: Int, values: Array[Byte]) extends AdsCommand {
+  case class AdsWriteCommand(indexGroup: Long, indexOffset: Long, values: Array[Byte]) extends AdsCommand {
     override type ResponseType = AdsWriteReadCommandResponse.type
   }
 
-  case class AdsWriteReadCommand(indexGroup: Int, indexOffset: Int, values: Array[Byte], readLength: Int)
-      extends AdsCommand {
+  case class AdsWriteReadCommand(indexGroup: Long, indexOffset: Long, readLength: Long, values: Array[Byte])
+    extends AdsCommand {
     override type ResponseType = AdsWriteReadCommandResponse
   }
 
-  case class AdsAddDeviceNotificationCommand(indexGroup: Int,
-                                             indexOffset: Int,
-                                             readLength: Int,
+  case class AdsAddDeviceNotificationCommand(indexGroup: Long,
+                                             indexOffset: Long,
+                                             readLength: Long,
                                              transmissionMode: AdsTransmissionMode,
-                                             maxDelay: Int,
-                                             cycleTime: Int)
-      extends AdsCommand {
+                                             maxDelay: Long,
+                                             cycleTime: Long)
+    extends AdsCommand {
     override type ResponseType = AdsAddDeviceNotificationCommandResponse
   }
 
-  case class AdsDeleteDeviceNotificationCommand(notificationHandle: Int) extends AdsCommand {
+  case class AdsDeleteDeviceNotificationCommand(notificationHandle: Long) extends AdsCommand {
     override type ResponseType = AdsDeleteDeviceNotificationCommandResponse.type
   }
 
   def commandId(c: AdsCommand): Short = c match {
-    case AdsReadCommand(_, _, _)                           => 0x0002
-    case AdsWriteCommand(_, _, _)                          => 0x0003
+    case AdsReadCommand(_, _, _) => 0x0002
+    case AdsWriteCommand(_, _, _) => 0x0003
     case AdsAddDeviceNotificationCommand(_, _, _, _, _, _) => 0x0006
-    case AdsDeleteDeviceNotificationCommand(_)             => 0x0007
-    case AdsWriteReadCommand(_, _, _, _)                   => 0x0009
+    case AdsDeleteDeviceNotificationCommand(_) => 0x0007
+    case AdsWriteReadCommand(_, _, _, _) => 0x0009
   }
 
-  /***
-    * Returns the 'data' bytes / payload of this command, excluding AMS headers
-    * @return
-    */
-  def getBytes(c: AdsCommand): Array[Byte] = c match {
-    case AdsReadCommand(indexGroup, indexOffset, readLength) =>
-      ByteBuffer
-        .allocate(12)
-        .order(ByteOrder.LITTLE_ENDIAN)
-        .putInt(indexGroup)
-        .putInt(indexOffset)
-        .putInt(readLength)
-        .array
-    case AdsWriteCommand(indexGroup, indexOffset, values) =>
-      ByteBuffer
-        .allocate(12 + values.length)
-        .order(ByteOrder.LITTLE_ENDIAN)
-        .putInt(indexGroup)
-        .putInt(indexOffset)
-        .putInt(values.length)
-        .put(values)
-        .array
-    case AdsWriteReadCommand(indexGroup, indexOffset, values, readLength) =>
-      ByteBuffer
-        .allocate(16 + values.length)
-        .order(ByteOrder.LITTLE_ENDIAN)
-        .putInt(indexGroup)
-        .putInt(indexOffset)
-        .putInt(readLength)
-        .putInt(values.length)
-        .put(values)
-        .array
-    case AdsAddDeviceNotificationCommand(indexGroup, indexOffset, readLength, transmissionMode, maxDelay, cycleTime) =>
-      ByteBuffer
-        .allocate(40)
-        .order(ByteOrder.LITTLE_ENDIAN)
-        .putInt(indexGroup)
-        .putInt(indexOffset)
-        .putInt(readLength)
-        .putInt(transmissionMode match { case Cyclic => 3; case OnChange => 4 })
-        .putInt(maxDelay)
-        .putInt(cycleTime)
-        .put(ByteBuffer.allocateDirect(16)) // Reserved bytes
-        .array
-    case AdsDeleteDeviceNotificationCommand(notificationHandle) =>
-      ByteBuffer.allocate(4)
-        .order(ByteOrder.LITTLE_ENDIAN)
-        .putInt(notificationHandle).array()
+  import scodec.codecs._
+
+  implicit val adsTransmissionModeCodec: Codec[AdsTransmissionMode] = uint32L.xmapc[AdsTransmissionMode] {
+    l => if (l == 3L) AdsTransmissionMode.Cyclic else AdsTransmissionMode.OnChange
+  } {
+    case AdsTransmissionMode.Cyclic => 3L
+    case AdsTransmissionMode.OnChange => 4L
   }
+
+  implicit val readCommandCodec: Codec[AdsReadCommand] =
+    (uint32L :: uint32L :: uint32L)
+    .as[AdsReadCommand]
+
+  implicit val writeCommandCodec: Codec[AdsWriteCommand] =
+    (uint32L :: uint32L :: variableSizeBytesLong(uint32L, bytes).xmapc(_.toArray)(ByteVector(_)))
+    .as[AdsWriteCommand]
+
+  implicit val writeReadCommandCodec: Codec[AdsWriteReadCommand] =
+    (uint32L :: uint32L :: uint32L :: variableSizeBytesLong(uint32L, bytes).xmapc(_.toArray)(ByteVector(_))).as[AdsWriteReadCommand]
+
+  implicit val addDeviceNotificationCommandCodec: Codec[AdsAddDeviceNotificationCommand] =
+    (uint32L ~ uint32L ~ uint32L ~ Codec[AdsTransmissionMode] ~ uint32L ~ uint32L <~ ignore(16 * 8))
+    .flattenLeftPairs
+    .as[AdsAddDeviceNotificationCommand]
+
+  implicit val deleteDeviceNotificationCommandCodec: Codec[AdsDeleteDeviceNotificationCommand] =
+    (uint32L).as[AdsDeleteDeviceNotificationCommand]
+
+  implicit val codec = (addDeviceNotificationCommandCodec :+: writeReadCommandCodec :+: writeCommandCodec :+: readCommandCodec :+: deleteDeviceNotificationCommandCodec).choice.as[AdsCommand]
+
+  def codecForCommandId(commandId: Int): Codec[Either[AdsCommand, AdsResponse]] =
+  codec.exmap(r => Attempt.successful(Left(r)), {
+    case Left(r) => Attempt.successful(r)
+    case Right(_) => Attempt.failure(Err(s"not a value of type AdsCommand"))
+  })
 }

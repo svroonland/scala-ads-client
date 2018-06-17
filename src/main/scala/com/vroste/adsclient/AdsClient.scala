@@ -96,6 +96,6 @@ object AdsTransmissionMode {
 
 }
 
-case class VariableHandle(value: Int) extends AnyVal
+case class VariableHandle(value: Long) extends AnyVal
 
-case class NotificationHandle(value: Int) extends AnyVal
+case class NotificationHandle(value: Long) extends AnyVal
