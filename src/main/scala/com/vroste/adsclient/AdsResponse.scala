@@ -19,13 +19,13 @@ object AdsResponse {
   case class AdsReadStateCommandResponse(errorCode: Int, state: AdsState, deviceState: Short) extends AdsResponse
   case class AdsNotificationResponse(stamps: Seq[AdsStampHeader])                             extends AdsResponse
 
-  def fromBytes(bytes: Array[Byte]): AdsResponse = {
-    val packet = AmsPacket.fromBytes(bytes)
-    val bb     = ByteBuffer.wrap(packet.data)
+  def fromPacket(packet: AmsPacket): AdsResponse = {
+    val bb     = ByteBuffer.wrap(packet.header.data)
 
     val errorCode = bb.getInt()
 
-    packet.amsHeader.commandId match {
+    // TODO scodec
+    packet.header.commandId match {
       case 1 =>
         // ADS Read Device Info
         val errorCode       = bb.getInt()

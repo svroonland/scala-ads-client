@@ -1,6 +1,7 @@
 package com.vroste.adsclient
 
-import java.nio.{ByteBuffer, ByteOrder}
+import scodec.Codec
+import scodec.bits.{BitVector, ByteVector}
 
 // See https://infosys.beckhoff.de/index.php?content=../content/1031/tc3_adscommon/html/tcadsamsspec_amstcppackage.htm&id=
 case class AmsHeader(amsNetIdTarget: AmsNetId,
@@ -9,46 +10,30 @@ case class AmsHeader(amsNetIdTarget: AmsNetId,
                      amsPortSource: Int,
                      commandId: Short,
                      stateFlags: Short,
+                     dataLength: Int,
                      errorCode: Int,
-                     invokeId: Int) {
-
-  def getBytes(dataLength: Int): Array[Byte] = {
-    val buffer = ByteBuffer.allocate(32)
-        .order(ByteOrder.LITTLE_ENDIAN)
-
-    buffer
-      .put(amsNetIdTarget.bytes) // 6 bytes
-      .putShort(amsPortTarget.toShort)
-      .put(amsNetIdSource.bytes) // 6 bytes
-      .putShort(amsPortSource.toShort)
-      .putShort(commandId)
-      .putShort(stateFlags)
-      .putInt(dataLength)
-      .putInt(errorCode)
-      .putInt(invokeId)
-      .array()
-  }
-}
+                     invokeId: Int,
+                     data: Either[AdsCommand, AdsResponse])
 
 object AmsHeader {
-  // Note: the byte buffer is mutated
-  def fromByteBuffer(bb: ByteBuffer): AmsHeader = {
-    val amsNetIdTargetBytes = new Array[Byte](6)
-    bb.get(amsNetIdTargetBytes)
-    val amsNetIdTarget = AmsNetId.fromBytes(amsNetIdTargetBytes)
 
-    val amsPortTarget = bb.getShort()
+  import scodec.codecs._
 
-    val amsNetIdSourceBytes = new Array[Byte](6)
-    bb.get(amsNetIdSourceBytes)
-    val amsNetIdSource = AmsNetId.fromBytes(amsNetIdSourceBytes)
+  val dataLengthAndRestCodec = variableSizePrefixedBytesLong(
+    size = "dataLength" | uint32L,
+    prefix = ("errorCode" | uint32L) ~ ("invokeId" | uint32),
+    value = Codec[Either[AdsCommand, AdsResponse]]
+  )
 
-    val amsPortSource = bb.getShort()
-    val commandId     = bb.getShort()
-    val stateFlags    = bb.getShort()
-    val errorCode     = bb.getInt()
-    val invokeId      = bb.getInt()
-
-    AmsHeader(amsNetIdTarget, amsPortTarget, amsNetIdSource, amsPortSource, commandId, stateFlags, errorCode, invokeId)
-  }
+  implicit val codec: Codec[AmsHeader] =
+    (("netId" | Codec[AmsNetId]) ~
+      ("targetPort" | uint32L) ~
+      ("netIdSource" | Codec[AmsNetId]) ~
+      ("portSource" | uint32L) ~
+      ("commandId" | uint16L) ~
+      ("stateFlags" | uint16L) ~
+      dataLengthAndRestCodec
+      ).flattenLeftPairs.xmapc(_.tupled match {
+      case (amsNetIdTarget, targetPort, netIdSource, portSource, commandId, stateFlags, ())
+    })
 }

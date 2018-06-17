@@ -12,6 +12,8 @@ import monix.eval.Task
 import monix.execution.Scheduler
 import monix.nio.tcp.AsyncSocketChannelClient
 import monix.reactive.Observable
+import scodec.Codec
+import scodec.bits.BitVector
 
 import scala.reflect.ClassTag
 import scala.util.Try
@@ -89,32 +91,35 @@ case class AdsNotificationSampleWithTimestamp(handle: Int, timestamp: Instant, d
     */
   private def runCommand[T <: AdsCommand, R <: AdsResponse: ClassTag](command: T): Task[R] = {
     generateInvokeId.flatMap { invokeId =>
-      val packet = AmsPacket(
-        AmsHeader(
+      val commandData = AdsCommand.getBytes(command)
+      val header = AmsHeader(
           amsNetIdTarget = settings.amsNetIdTarget,
           amsPortTarget = settings.amsPortTarget,
           amsNetIdSource = settings.amsNetIdSource,
           amsPortSource = settings.amsPortSource,
           commandId = AdsCommand.commandId(command),
           stateFlags = 4,
+          dataLength = commandData.length,
           errorCode = 0,
-          invokeId = invokeId
-        ),
-        AdsCommand.getBytes(command)
-      )
+          invokeId = invokeId,
+          data = commandData
+        )
+      // TODO can we do this using scodec?
+      val packet = AmsPacket(32 + commandData.length, header)
+      val bytes = Codec[AmsPacket].encode(packet).getOrElse(throw new IllegalArgumentException("Unable to encode packet"))
+        .toByteArray
 
       val writeCommand = socketClient.tcpConsumer
         .flatMap { consumer =>
           println(s"Running command ${packet.debugString}")
-          consumer.apply(Observable.pure(packet.toBytes) ++ Observable.pure(packet.toBytes))
+          consumer.apply(Observable.pure(bytes))
         }.doOnFinish { r => Task.eval(println(s"Done running command with result ${r}"))}
 
       val classTag = implicitly[ClassTag[R]]
 
       val receiveResponse = receivedPackets
-        .filter(_.amsHeader.invokeId == invokeId)
-        .map(_.data)
-        .flatMap(AdsResponse.fromBytes(_) match {
+        .filter(_.header.invokeId == invokeId)
+        .flatMap(AdsResponse.fromPacket(_) match {
           case r if r.getClass == classTag.runtimeClass =>
             Observable.pure(r.asInstanceOf[R])
           case r =>
@@ -142,13 +147,13 @@ case class AdsNotificationSampleWithTimestamp(handle: Int, timestamp: Instant, d
     .flatten
     .doOnError(e => s"Receive erro ${e}")
     .doOnNext(bytes => println(s"Got packet ${bytes}"))
-    .map(AmsPacket.fromBytes) // TODO is an Array[Byte] always a complete packet, or a partial packet?
+    .map(bytes => Codec[AmsPacket].asDecoder.decode(BitVector(bytes)).getOrElse(throw new IllegalArgumentException("Decode error")).value)
+  // TODO is an Array[Byte] always a complete packet, or a partial packet?
 
   // Observable of all responses from the ADS server
   private lazy val responses: Observable[AdsResponse] =
     receivedPackets
-      .map(_.data)
-      .map(AdsResponse.fromBytes)
+      .map(AdsResponse.fromPacket)
 
   val notificationSamples: Observable[AdsNotificationSampleWithTimestamp] =
     responses
