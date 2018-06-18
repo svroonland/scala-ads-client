@@ -40,7 +40,7 @@ case class AdsNotificationSampleWithTimestamp(handle: Long, timestamp: Instant, 
     val command = AdsWriteReadCommand(0x0000F003, 0x00000000, DefaultReadables.intReadable.size, asAdsString(varName))
 
     for {
-      response <- runCommand[AdsWriteReadCommand, AdsWriteReadCommandResponse](command)
+      response <- runCommand[AdsWriteReadCommandResponse](command)
       handle <- Task.fromTry(Try {
         response.data.toLong(signed = false, ordering = ByteOrdering.LittleEndian)
       })
@@ -50,7 +50,7 @@ case class AdsNotificationSampleWithTimestamp(handle: Long, timestamp: Instant, 
   def encodeError[T]: T = throw new IllegalArgumentException("Unable to encode")
 
   def releaseVariableHandle(handle: VariableHandle): Task[Unit] = {
-    runCommand[AdsWriteCommand, AdsWriteCommandResponse] {
+    runCommand[AdsWriteCommandResponse] {
       AdsWriteCommand(0x0000F006, 0x00000000, scodec.codecs.uint32L.encode(handle.value).getOrElse(encodeError).toByteArray)
     }.map(_ => ())
   }
@@ -59,7 +59,7 @@ case class AdsNotificationSampleWithTimestamp(handle: Long, timestamp: Instant, 
                             length: Int,
                             maxDelay: Int,
                             cycleTime: Int): Task[NotificationHandle] =
-    runCommand[AdsAddDeviceNotificationCommand, AdsAddDeviceNotificationCommandResponse] {
+    runCommand[AdsAddDeviceNotificationCommandResponse] {
       AdsAddDeviceNotificationCommand(0x0000F005,
         variableHandle.value,
         length,
@@ -75,12 +75,12 @@ case class AdsNotificationSampleWithTimestamp(handle: Long, timestamp: Instant, 
     }.map(_ => ())
 
   def writeToVariable(variableHandle: VariableHandle, value: Array[Byte]): Task[Unit] =
-    runCommand[AdsWriteCommand, AdsWriteCommandResponse] {
+    runCommand[AdsWriteCommandResponse] {
       AdsWriteCommand(0x0000F005, variableHandle.value, value)
     }.map(_ => ())
 
   def readVariable(variableHandle: VariableHandle, size: Int): Task[Array[Byte]] =
-    runCommand[AdsReadCommand, AdsReadCommandResponse] {
+    runCommand[AdsReadCommandResponse] {
       AdsReadCommand(0x0000F005, variableHandle.value, size)
     }.map(_.data.toArray)
 
@@ -89,7 +89,7 @@ case class AdsNotificationSampleWithTimestamp(handle: Long, timestamp: Instant, 
   /**
     * Run a command, await the response to the command and return it
     */
-  private def runCommand[T <: AdsCommand, R <: AdsResponse : ClassTag](command: T): Task[R] = {
+  private def runCommand[R <: AdsResponse : ClassTag](command: AdsCommand): Task[R] = {
     generateInvokeId.flatMap { invokeId =>
       val header = AmsHeader(
         amsNetIdTarget = settings.amsNetIdTarget,
