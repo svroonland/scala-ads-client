@@ -35,7 +35,9 @@ case class AdsNotificationSampleWithTimestamp(handle: Long, timestamp: Instant, 
   */
 /* private */ class AdsCommandClient(settings: AdsConnectionSettings, socketClient: AsyncSocketChannelClient)(
   implicit scheduler: Scheduler) {
+
   import AdsCommandClient._
+
   def getVariableHandle(varName: String): Task[VariableHandle] = {
     val command = AdsWriteReadCommand(0x0000F003, 0x00000000, DefaultReadables.intReadable.size, asAdsString(varName))
 
@@ -134,15 +136,23 @@ case class AdsNotificationSampleWithTimestamp(handle: Long, timestamp: Instant, 
               new IllegalArgumentException(s"Expected response for command ${command}, got response $r"))
         })
         .firstL
-          .asyncBoundary
-          .timeout(5.seconds)
+        .asyncBoundary
+        .timeout(5.seconds)
 
       // Execute in parallel to avoid race conditions. Or can we be sure we don't need this? TODO
-      val r = Task.parMap2(writeCommand, receiveResponse) { case (_, response) => response }
-
-      r.flatMap( r => if (r.errorCode != 0L) Task.raiseError(new IllegalArgumentException(s"ADS error ${r.errorCode}")) else Task.pure(r))
+      for {
+        r <- Task.parMap2(writeCommand, receiveResponse) { case (_, response) => response }
+        _ <- checkResponse(r)
+      } yield r
     }
   }
+
+  def checkResponse(r: AdsResponse): Task[Unit] =
+    if (r.errorCode != 0L) {
+      Task.raiseError(new IllegalArgumentException(s"ADS error ${r.errorCode}"))
+    } else {
+      Task.unit
+    }
 
   private val lastInvokeId: AtomicInteger = new AtomicInteger(1)
   private val generateInvokeId: Task[Int] = Task.eval {
@@ -151,8 +161,7 @@ case class AdsNotificationSampleWithTimestamp(handle: Long, timestamp: Instant, 
 
   private lazy val tcpObservable: Task[Observable[Array[Byte]]] =
     socketClient.tcpObservable
-//      .map(_.replay(1).asyncBoundary(OverflowStrategy.DropOld(100))) // Needed to avoid closing when the observable's subscription completes
-        .map(_.share)
+      .map(_.share)
       .map(_.doOnTerminate(reason => println(s"Stopping with reason ${reason}")))
       .map(_.doOnEarlyStop(() => println(s"TCP Observable STOPPED early")))
       .memoize // Needed to avoid creating the observable more than once
@@ -181,18 +190,10 @@ case class AdsNotificationSampleWithTimestamp(handle: Long, timestamp: Instant, 
       .map { r =>
         for {
           stamp <- r.stamps
-          timestamp = toInstant(stamp.timestamp)
           sample <- stamp.samples
-        } yield AdsNotificationSampleWithTimestamp(sample.handle, timestamp, sample.data)
+        } yield AdsNotificationSampleWithTimestamp(sample.handle, stamp.timestamp, sample.data)
       }
       .flatMap(Observable.fromIterable)
-
-  lazy val timestampZero: Instant = Instant.parse("1601-01-01T00:00:00Z")
-
-  def toInstant(fileTime: Long): Instant = {
-    val duration = Duration.of(fileTime / 10, ChronoUnit.MICROS).plus(fileTime % 10 * 100, ChronoUnit.NANOS)
-    timestampZero.plus(duration)
-  }
 
   private val receiveSubscription: Cancelable = receivedPackets.subscribe()
 }

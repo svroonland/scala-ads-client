@@ -1,5 +1,8 @@
 package com.vroste.adsclient
 
+import java.time.{Duration, Instant}
+import java.time.temporal.ChronoUnit
+
 import scodec.bits.ByteVector
 import scodec.{Attempt, Codec, Err}
 import scodec.codecs._
@@ -46,7 +49,7 @@ object AdsResponse {
     (uint32L :: variableSizeBytesLong("samplesSize" | uint32L, bytes)).as
 
   val adsStampHeaderCodec: Codec[AdsStampHeader] =
-    (uint32L :: listOfN("samples" | uint32LAsInt, adsNotificationSampleCodec)).as
+    (WindowsFiletime.codec :: listOfN("samples" | uint32LAsInt, adsNotificationSampleCodec)).as
 
   val adsDeviceNotificationCodec: Codec[AdsNotificationResponse] =
     variableSizeBytesLong("length" | uint32L,
@@ -75,5 +78,19 @@ object AdsResponse {
     })
 }
 
-case class AdsStampHeader(timestamp: Long, samples: List[AdsNotificationSample])
+object WindowsFiletime {
+  lazy val timestampZero: Instant = Instant.parse("1601-01-01T00:00:00Z")
+
+  def filetimeToInstant(fileTime: Long): Instant = {
+    val duration = Duration.of(fileTime / 10, ChronoUnit.MICROS).plus(fileTime % 10 * 100, ChronoUnit.NANOS)
+    timestampZero.plus(duration)
+  }
+
+  def instantToFiletime(instant: Instant): Long =
+    timestampZero.until(instant, ChronoUnit.NANOS) // Something like this
+
+  val codec: Codec[Instant] = uint32L.xmap(filetimeToInstant, instantToFiletime)
+}
+
+case class AdsStampHeader(timestamp: Instant, samples: List[AdsNotificationSample])
 case class AdsNotificationSample(handle: Long, data: ByteVector)
