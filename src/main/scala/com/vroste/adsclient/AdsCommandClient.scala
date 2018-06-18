@@ -1,18 +1,16 @@
 package com.vroste.adsclient
 
-import java.time.temporal.ChronoUnit
-import java.time.{Duration, Instant}
+import java.time.Instant
 import java.util.concurrent.atomic.AtomicInteger
 
 import com.vroste.adsclient.AdsCommand._
 import com.vroste.adsclient.AdsResponse._
-import com.vroste.adsclient.codec.{DefaultReadables, DefaultWritables}
 import monix.eval.Task
 import monix.execution.{Cancelable, Scheduler}
 import monix.nio.tcp.AsyncSocketChannelClient
 import monix.reactive.Observable
-import scodec.Codec
 import scodec.bits.{BitVector, ByteOrdering, ByteVector}
+import scodec.{Attempt, Codec, codecs}
 
 import scala.reflect.ClassTag
 import scala.util.Try
@@ -39,9 +37,10 @@ case class AdsNotificationSampleWithTimestamp(handle: Long, timestamp: Instant, 
   import AdsCommandClient._
 
   def getVariableHandle(varName: String): Task[VariableHandle] = {
-    val command = AdsWriteReadCommand(0x0000F003, 0x00000000, DefaultReadables.intReadable.size, asAdsString(varName))
 
     for {
+      encodedVarName <- attemptToTask(codecs.cstring.encode(varName))
+      command = AdsWriteReadCommand(0x0000F003, 0x00000000, 4, encodedVarName.toByteVector)
       response <- runCommand[AdsWriteReadCommandResponse](command)
       handle <- Task.fromTry(Try {
         response.data.toLong(signed = false, ordering = ByteOrdering.LittleEndian)
@@ -49,16 +48,15 @@ case class AdsNotificationSampleWithTimestamp(handle: Long, timestamp: Instant, 
     } yield VariableHandle(handle)
   }
 
-  def encodeError[T]: T = throw new IllegalArgumentException("Unable to encode")
-
-  def releaseVariableHandle(handle: VariableHandle): Task[Unit] = {
-    runCommand[AdsWriteCommandResponse] {
-      AdsWriteCommand(0x0000F006, 0x00000000, scodec.codecs.uint32L.encode(handle.value).getOrElse(encodeError).toByteArray)
-    }.map(_ => ())
-  }
+  def releaseVariableHandle(handle: VariableHandle): Task[Unit] = for {
+    encodedHandle <- attemptToTask(codecs.uint32L.encode(handle.value))
+    _ <- runCommand[AdsWriteCommandResponse] {
+      AdsWriteCommand(0x0000F006, 0x00000000, encodedHandle.toByteVector)
+    }
+  } yield ()
 
   def getNotificationHandle(variableHandle: VariableHandle,
-                            length: Int,
+                            length: Long,
                             maxDelay: Int,
                             cycleTime: Int): Task[NotificationHandle] =
     runCommand[AdsAddDeviceNotificationCommandResponse] {
@@ -76,15 +74,15 @@ case class AdsNotificationSampleWithTimestamp(handle: Long, timestamp: Instant, 
       AdsDeleteDeviceNotificationCommand(notificationHandle.value)
     }.map(_ => ())
 
-  def writeToVariable(variableHandle: VariableHandle, value: Array[Byte]): Task[Unit] =
+  def writeToVariable(variableHandle: VariableHandle, value: ByteVector): Task[Unit] =
     runCommand[AdsWriteCommandResponse] {
       AdsWriteCommand(0x0000F005, variableHandle.value, value)
     }.map(_ => ())
 
-  def readVariable(variableHandle: VariableHandle, size: Int): Task[Array[Byte]] =
+  def readVariable(variableHandle: VariableHandle, size: Long): Task[ByteVector] =
     runCommand[AdsReadCommandResponse] {
       AdsReadCommand(0x0000F005, variableHandle.value, size)
-    }.map(_.data.toArray)
+    }.map(_.data)
 
   def close(): Task[Unit] = {
     for {
@@ -149,7 +147,7 @@ case class AdsNotificationSampleWithTimestamp(handle: Long, timestamp: Instant, 
 
   def checkResponse(r: AdsResponse): Task[Unit] =
     if (r.errorCode != 0L) {
-      Task.raiseError(new IllegalArgumentException(s"ADS error ${r.errorCode}"))
+      Task.raiseError(new IllegalArgumentException(s"ADS error 0x${r.errorCode.toHexString}"))
     } else {
       Task.unit
     }
@@ -171,12 +169,11 @@ case class AdsNotificationSampleWithTimestamp(handle: Long, timestamp: Instant, 
     .flatten
     .map(ByteVector.apply)
     .doOnNext(bytes => println(s"Received packet ${bytes.toHex}"))
-    .map(bytes => Codec[AmsPacket].asDecoder.decode(BitVector(bytes)))
+    .map(bytes => Codec.decode[AmsPacket](BitVector(bytes)))
     .doOnNext(p => println(s"Decoded packet ${p}"))
     .map(_.getOrElse(throw new IllegalArgumentException("Decode error")).value)
     .doOnError(e => println(s"Receive error: ${e}"))
     .share
-  // TODO is an Array[Byte] always a complete packet, or a partial packet?
 
   // Observable of all responses from the ADS server
   private lazy val responses: Observable[AdsResponse] =
@@ -199,6 +196,8 @@ case class AdsNotificationSampleWithTimestamp(handle: Long, timestamp: Instant, 
 }
 
 object AdsCommandClient {
-  private[adsclient] def asAdsString(value: String): Array[Byte] = DefaultWritables.stringWritable.toBytes(value)
-
+  def attemptToTask[T](attempt: Attempt[T]): Task[T] =
+    attempt.fold(cause => Task.raiseError(AdsClientException(cause.messageWithContext)), Task.pure)
 }
+
+case class AdsClientException(message: String) extends Exception

@@ -17,11 +17,11 @@ object AdsCommand {
     override type ResponseType = AdsReadCommandResponse
   }
 
-  case class AdsWriteCommand(indexGroup: Long, indexOffset: Long, values: Array[Byte]) extends AdsCommand {
+  case class AdsWriteCommand(indexGroup: Long, indexOffset: Long, values: ByteVector) extends AdsCommand {
     override type ResponseType = AdsWriteReadCommandResponse.type
   }
 
-  case class AdsWriteReadCommand(indexGroup: Long, indexOffset: Long, readLength: Long, values: Array[Byte])
+  case class AdsWriteReadCommand(indexGroup: Long, indexOffset: Long, readLength: Long, values: ByteVector)
     extends AdsCommand {
     override type ResponseType = AdsWriteReadCommandResponse
   }
@@ -62,11 +62,11 @@ object AdsCommand {
     .as[AdsReadCommand]
 
   implicit val writeCommandCodec: Codec[AdsWriteCommand] =
-    (uint32L :: uint32L :: variableSizeBytesLong(uint32L, bytes).xmapc(_.toArray)(ByteVector(_)))
+    (uint32L :: uint32L :: variableSizeBytesLong(uint32L, bytes))
     .as[AdsWriteCommand]
 
   implicit val writeReadCommandCodec: Codec[AdsWriteReadCommand] =
-    (uint32L :: uint32L :: uint32L :: variableSizeBytesLong(uint32L, bytes).xmapc(_.toArray)(ByteVector(_))).as[AdsWriteReadCommand]
+    (uint32L :: uint32L :: uint32L :: variableSizeBytesLong(uint32L, bytes)).as[AdsWriteReadCommand]
 
   implicit val addDeviceNotificationCommandCodec: Codec[AdsAddDeviceNotificationCommand] =
     (uint32L ~ uint32L ~ uint32L ~ Codec[AdsTransmissionMode] ~ uint32L ~ uint32L <~ ignore(16 * 8))
