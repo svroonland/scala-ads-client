@@ -8,7 +8,7 @@ import com.vroste.adsclient.AdsCommand._
 import com.vroste.adsclient.AdsResponse._
 import com.vroste.adsclient.codec.{DefaultReadables, DefaultWritables}
 import monix.eval.Task
-import monix.execution.Scheduler
+import monix.execution.{Cancelable, Scheduler}
 import monix.nio.tcp.AsyncSocketChannelClient
 import monix.reactive.Observable
 import scodec.Codec
@@ -84,7 +84,12 @@ case class AdsNotificationSampleWithTimestamp(handle: Long, timestamp: Instant, 
       AdsReadCommand(0x0000F005, variableHandle.value, size)
     }.map(_.data.toArray)
 
-  def close(): Task[Unit] = socketClient.close()
+  def close(): Task[Unit] = {
+    for {
+      _ <- Task.eval(receiveSubscription.cancel())
+      _ <- socketClient.close()
+    } yield ()
+  }
 
   /**
     * Run a command, await the response to the command and return it
@@ -189,7 +194,7 @@ case class AdsNotificationSampleWithTimestamp(handle: Long, timestamp: Instant, 
     timestampZero.plus(duration)
   }
 
-  val receiveSubscription = receivedPackets.subscribe()
+  private val receiveSubscription: Cancelable = receivedPackets.subscribe()
 }
 
 object AdsCommandClient {
