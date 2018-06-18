@@ -114,9 +114,8 @@ case class AdsNotificationSampleWithTimestamp(handle: Long, timestamp: Instant, 
 
       val writeCommand = socketClient.tcpConsumer
         .flatMap { consumer =>
-          println(s"Running command ${packet.debugString}")
           consumer.apply(Observable.pure(bytes))
-        }.doOnFinish { r => Task.eval(println(s"Done running command with result ${r}")) }
+        }
 
       val classTag = implicitly[ClassTag[R]]
 
@@ -126,10 +125,8 @@ case class AdsNotificationSampleWithTimestamp(handle: Long, timestamp: Instant, 
         .filter(_.header.invokeId == invokeId)
         .flatMap(_.header.data match {
           case Right(r) if r.getClass == classTag.runtimeClass =>
-            println(s"Got expected response ${r}")
             Observable.pure(r.asInstanceOf[R])
           case r =>
-            println("nope, error reading response")
             Observable.raiseError(
               new IllegalArgumentException(s"Expected response for command ${command}, got response $r"))
         })
@@ -160,19 +157,21 @@ case class AdsNotificationSampleWithTimestamp(handle: Long, timestamp: Instant, 
   private lazy val tcpObservable: Task[Observable[Array[Byte]]] =
     socketClient.tcpObservable
       .map(_.share)
-      .map(_.doOnTerminate(reason => println(s"Stopping with reason ${reason}")))
-      .map(_.doOnEarlyStop(() => println(s"TCP Observable STOPPED early")))
+//      .map(_.doOnTerminate(reason => println(s"Stopping with reason ${reason}")))
       .memoize // Needed to avoid creating the observable more than once
 
   private lazy val receivedPackets: Observable[AmsPacket] = Observable
     .fromTask(tcpObservable)
     .flatten
     .map(ByteVector.apply)
-    .doOnNext(bytes => println(s"Received packet ${bytes.toHex}"))
-    .map(bytes => Codec.decode[AmsPacket](BitVector(bytes)))
-    .doOnNext(p => println(s"Decoded packet ${p}"))
-    .map(_.getOrElse(throw new IllegalArgumentException("Decode error")).value)
-    .doOnError(e => println(s"Receive error: ${e}"))
+    .flatMap(bytes => Observable.fromTask(attemptToTask(Codec.decode[AmsPacket](BitVector(bytes)))).onErrorRecoverWith {
+      case ex @ AdsClientException(e) =>
+        println(s"Error decoding packet ${bytes.toHex}: ${e}")
+        Observable.raiseError(ex)
+    } )
+    .map(_.value)
+//    .doOnNext(p => println(s"Received AMS packet ${p}"))
+//    .doOnError(e => println(s"Receive error: ${e}"))
     .share
 
   // Observable of all responses from the ADS server
@@ -191,6 +190,7 @@ case class AdsNotificationSampleWithTimestamp(handle: Long, timestamp: Instant, 
         } yield AdsNotificationSampleWithTimestamp(sample.handle, stamp.timestamp, sample.data)
       }
       .flatMap(Observable.fromIterable)
+//      .doOnNext(n => println(s"Got notification ${n}"))
 
   private val receiveSubscription: Cancelable = receivedPackets.subscribe()
 }
@@ -200,4 +200,4 @@ object AdsCommandClient {
     attempt.fold(cause => Task.raiseError(AdsClientException(cause.messageWithContext)), Task.pure)
 }
 
-case class AdsClientException(message: String) extends Exception
+case class AdsClientException(message: String) extends Exception(message)

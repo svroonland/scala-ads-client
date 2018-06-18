@@ -65,6 +65,8 @@ object AdsResponse {
       adsAddDeviceNotificationResponseCodec.upcast
     case 7 =>
       adsDeleteDeviceNotificationCommandResponseCodec.upcast
+    case 8 =>
+      adsDeviceNotificationCodec.upcast
     case 9 =>
       adsWriteReadCommandResponseCodec.upcast
     case unknownCommandId =>
@@ -89,7 +91,7 @@ object WindowsFiletime {
   def instantToFiletime(instant: Instant): Long =
     timestampZero.until(instant, ChronoUnit.NANOS) // Something like this
 
-  val codec: Codec[Instant] = uint32L.xmap(filetimeToInstant, instantToFiletime)
+  val codec: Codec[Instant] = longL(64).xmap(filetimeToInstant, instantToFiletime)
 }
 
 case class AdsStampHeader(timestamp: Instant, samples: List[AdsNotificationSample])

@@ -10,9 +10,7 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
 
   override def read[T](varName: String, codec: Codec[T]): Task[T] = {
     for {
-      _ <- Task.eval(println("Getting variable handle"))
       varHandle <- client.getVariableHandle(varName)
-      _ <- Task.eval(println(s"Got variable handle ${varHandle}"))
       data <- client
         .readVariable(varHandle, codec.sizeBound.upperBound.getOrElse(codec.sizeBound.lowerBound))
         .doOnFinish { _ =>
@@ -51,7 +49,7 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
         for {
           varHandle <- client.getVariableHandle(varName)
           readLength = codec.sizeBound.upperBound.getOrElse(codec.sizeBound.lowerBound)
-          notificationHandle <- client.getNotificationHandle(varHandle, readLength, 0, 0) // TODO cycletime
+          notificationHandle <- client.getNotificationHandle(varHandle, readLength, 0, 100) // TODO cycletime
         } yield
           f(notificationHandle)
             .doOnTerminateTask(_ => client.deleteNotificationHandle(notificationHandle))

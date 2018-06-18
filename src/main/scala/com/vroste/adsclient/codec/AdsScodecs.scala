@@ -1,6 +1,7 @@
 package com.vroste.adsclient.codec
 
-import scodec.{Attempt, Codec, Err, codecs => scodecs}
+import scodec.bits.BitVector
+import scodec.{Attempt, Codec, DecodeResult, Err, SizeBound, codecs => scodecs}
 
 /**
   * Codecs for PLC variable types
@@ -22,16 +23,26 @@ trait AdsCodecs {
   val maxDefaultStringLength = 80
   val string = stringN(maxDefaultStringLength)
 
-  def stringN(maxLength: Int) = scodecs.cstring.narrow[String](s =>
-    if (s.length <= maxLength) {
-      Attempt.successful(s)
-    } else {
-      Attempt.failure(Err(s"String ${s} is longer than maximum string length ${maxLength}"))
-    },
-    identity)
+  def stringN(maxLength: Int): Codec[String] = {
+    val baseCodec = scodecs.cstring.narrow[String](s =>
+      if (s.length <= maxLength) {
+        Attempt.successful(s)
+      } else {
+        Attempt.failure(Err(s"String ${s} is longer than maximum string length ${maxLength}"))
+      },
+      identity)
+
+    new Codec[String] {
+      override def decode(bits: BitVector): Attempt[DecodeResult[String]] = baseCodec.decode(bits)
+      override def encode(value: String): Attempt[BitVector] = baseCodec.encode(value)
+      override def sizeBound: SizeBound = SizeBound.atMost(maxLength + 1)
+    }
+  }
 
   // TODO TIME, TIME_OF_DAY, DATE, DATE_AND_TIME, ENUMcomp
 }
+
+object AdsCodecs extends AdsCodecs
 
 object CustomDataTypeReadableExample extends AdsCodecs {
   import scodec.codecs.StringEnrichedWithCodecContextSupport

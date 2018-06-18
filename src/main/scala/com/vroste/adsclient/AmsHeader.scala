@@ -24,7 +24,9 @@ object AmsHeader {
         case 0x0005 =>
           // Response
           AdsResponse.codecForCommandId(commandId)
-        case 0x004 =>
+        case 0x0004 if commandId == 8 => // ADS notification
+          AdsResponse.codecForCommandId(commandId)
+        case 0x0004 =>
           // Request
           AdsCommand.codecForCommandId(commandId)
       }
