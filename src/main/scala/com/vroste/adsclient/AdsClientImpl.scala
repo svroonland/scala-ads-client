@@ -1,34 +1,40 @@
 package com.vroste.adsclient
 
-import com.vroste.adsclient.AdsCommandClient.attemptToTask
+import com.vroste.adsclient.AdsCommandClient.decodeAttemptToTask
 import monix.eval.Task
 import monix.reactive.{Consumer, Observable}
 import scodec.Codec
 import scodec.bits.BitVector
 
 class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
+  // For proper shutdown, we need to keep track of any cleanup commands that are pending and need the ADS client
+  val resourcesToBeReleased: CountingSemaphore = new CountingSemaphore
 
   override def read[T](varName: String, codec: Codec[T]): Task[T] = {
     for {
       varHandle <- client.getVariableHandle(varName)
+      _ <- resourcesToBeReleased.increment
       data <- client
         .readVariable(varHandle, codec.sizeBound.upperBound.getOrElse(codec.sizeBound.lowerBound))
         .doOnFinish { _ =>
           client.releaseVariableHandle(varHandle)
         }
-      decoded <- attemptToTask(codec.decode(BitVector(data)))
+      _ <- resourcesToBeReleased.decrement
+      decoded <- decodeAttemptToTask(codec.decode(BitVector(data)))
     } yield decoded.value
   }
 
   override def write[T](varName: String, value: T, codec: Codec[T]): Task[Unit] = {
     for {
       varHandle <- client.getVariableHandle(varName)
-      encoded <- attemptToTask(codec.encode(value))
+      _ <- resourcesToBeReleased.increment
+      encoded <- decodeAttemptToTask(codec.encode(value))
       _ <- client
         .writeToVariable(varHandle, encoded.toByteVector)
         .doOnFinish { _ =>
           client.releaseVariableHandle(varHandle)
         }
+      _ <- resourcesToBeReleased.decrement
     } yield ()
   }
 
@@ -48,12 +54,14 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
       Observable.fromTask {
         for {
           varHandle <- client.getVariableHandle(varName)
+          _ <- resourcesToBeReleased.increment
           readLength = codec.sizeBound.upperBound.getOrElse(codec.sizeBound.lowerBound)
           notificationHandle <- client.getNotificationHandle(varHandle, readLength, 0, 100) // TODO cycletime
         } yield
           f(notificationHandle)
             .doOnTerminateTask(_ => client.deleteNotificationHandle(notificationHandle))
             .doOnTerminateTask(_ => client.releaseVariableHandle(varHandle))
+            .doOnTerminateTask(_ => resourcesToBeReleased.decrement)
       }.flatten
 
     usingNotificationHandle { handle =>
@@ -62,7 +70,7 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
         .flatMap { sample =>
           Observable.fromTask {
             for {
-              decodeResult <- attemptToTask(codec.decode(BitVector(sample.data)))
+              decodeResult <- decodeAttemptToTask(codec.decode(BitVector(sample.data)))
             } yield AdsNotification(decodeResult.value, sample.timestamp)
           }
         }
@@ -80,16 +88,27 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
     * @tparam T Type of the value
     * @return
     */
-  override def consumerFor[T](varName: String, codec: Codec[T]): Consumer[T, Unit] =
-    consumerBracket[T, VariableHandle](client.getVariableHandle(varName), client.releaseVariableHandle) {
+  override def consumerFor[T](varName: String, codec: Codec[T]): Consumer[T, Unit] = {
+    def before = for {
+      handle <- client.getVariableHandle(varName)
+      _ <- resourcesToBeReleased.increment
+    } yield handle
+
+    def after(handle: VariableHandle) = for {
+      _ <- client.releaseVariableHandle(handle)
+      _ <- resourcesToBeReleased.decrement
+    } yield ()
+
+    consumerBracket[T, VariableHandle](before, after) {
       Consumer.foreachTask {
         case (handle, value) =>
           for {
-            encoded <- attemptToTask(codec.encode(value))
+            encoded <- decodeAttemptToTask(codec.encode(value))
             _ <- client.writeToVariable(handle, encoded.toByteVector)
           } yield ()
       }
     }
+  }
 
   /**
     * Creates a consumer that creates a resource before handling the first element and cleans it up after
@@ -115,5 +134,9 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
       }
   }
 
-  override def close(): Task[Unit] = client.close()
+  override def close(): Task[Unit] =
+    for {
+    _ <- resourcesToBeReleased.awaitZero
+    _ <- client.close()
+  } yield ()
 }
