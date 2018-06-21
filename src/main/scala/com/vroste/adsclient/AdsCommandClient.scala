@@ -50,6 +50,7 @@ case class AdsNotificationSampleWithTimestamp(handle: Long, timestamp: Instant, 
 
   def releaseVariableHandle(handle: VariableHandle): Task[Unit] = for {
     encodedHandle <- decodeAttemptToTask(codecs.uint32L.encode(handle.value))
+    _ = println("Releaseing variable handle")
     _ <- runCommand[AdsWriteCommandResponse] {
       AdsWriteCommand(0x0000F006, 0x00000000, encodedHandle.toByteVector)
     }
@@ -70,7 +71,7 @@ case class AdsNotificationSampleWithTimestamp(handle: Long, timestamp: Instant, 
       .map(NotificationHandle)
 
   def deleteNotificationHandle(notificationHandle: NotificationHandle): Task[Unit] =
-    runCommand {
+    runCommand[AdsDeleteDeviceNotificationCommandResponse] {
       AdsDeleteDeviceNotificationCommand(notificationHandle.value)
     }.map(_ => ())
 
@@ -136,6 +137,7 @@ case class AdsNotificationSampleWithTimestamp(handle: Long, timestamp: Instant, 
 
       // Execute in parallel to avoid race conditions. Or can we be sure we don't need this? TODO
       for {
+        _ <- Task.eval(println(s"Running command ${command}"))
         r <- Task.parMap2(writeCommand, receiveResponse) { case (_, response) => response }
         _ <- checkResponse(r)
       } yield r
@@ -170,8 +172,9 @@ case class AdsNotificationSampleWithTimestamp(handle: Long, timestamp: Instant, 
         Observable.raiseError(ex)
     } )
     .map(_.value)
-//    .doOnNext(p => println(s"Received AMS packet ${p}"))
-//    .doOnError(e => println(s"Receive error: ${e}"))
+    .doOnTerminate(_ => println("Received packets completed"))
+    .doOnNext(p => println(s"Received AMS packet ${p}"))
+    .doOnError(e => println(s"Receive error: ${e}"))
     .share
 
   // Observable of all responses from the ADS server

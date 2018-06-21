@@ -11,7 +11,8 @@ lazy val root = (project in file(".")).
     libraryDependencies ++= Seq(
       scalaTest % Test,
       "io.monix" %% "monix-nio" % "0.0.3",
-      // https://mvnrepository.com/artifact/org.scodec/scodec-bits
+      "io.monix" %% "monix" % "3.0.0-RC1",
+// https://mvnrepository.com/artifact/org.scodec/scodec-bits
       "org.scodec" %% "scodec-bits" % "1.1.5",
       "org.scodec" %% "scodec-core" % "1.10.3"
 
