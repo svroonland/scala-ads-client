@@ -5,7 +5,7 @@ import java.util.concurrent.atomic.AtomicInteger
 
 import com.vroste.adsclient.AdsCommand._
 import com.vroste.adsclient.AdsResponse._
-import monix.eval.Task
+import monix.eval.{MVar, Task}
 import monix.execution.{Cancelable, Scheduler}
 import monix.nio.tcp.AsyncSocketChannelClient
 import monix.reactive.Observable
@@ -39,7 +39,7 @@ case class AdsNotificationSampleWithTimestamp(handle: Long, timestamp: Instant, 
   def getVariableHandle(varName: String): Task[VariableHandle] = {
 
     for {
-      encodedVarName <- attemptToTask(codecs.cstring.encode(varName))
+      encodedVarName <- decodeAttemptToTask(codecs.cstring.encode(varName))
       command = AdsWriteReadCommand(0x0000F003, 0x00000000, 4, encodedVarName.toByteVector)
       response <- runCommand[AdsWriteReadCommandResponse](command)
       handle <- Task.fromTry(Try {
@@ -49,7 +49,8 @@ case class AdsNotificationSampleWithTimestamp(handle: Long, timestamp: Instant, 
   }
 
   def releaseVariableHandle(handle: VariableHandle): Task[Unit] = for {
-    encodedHandle <- attemptToTask(codecs.uint32L.encode(handle.value))
+    encodedHandle <- decodeAttemptToTask(codecs.uint32L.encode(handle.value))
+//    _ = println("Releaseing variable handle")
     _ <- runCommand[AdsWriteCommandResponse] {
       AdsWriteCommand(0x0000F006, 0x00000000, encodedHandle.toByteVector)
     }
@@ -70,7 +71,7 @@ case class AdsNotificationSampleWithTimestamp(handle: Long, timestamp: Instant, 
       .map(NotificationHandle)
 
   def deleteNotificationHandle(notificationHandle: NotificationHandle): Task[Unit] =
-    runCommand {
+    runCommand[AdsDeleteDeviceNotificationCommandResponse] {
       AdsDeleteDeviceNotificationCommand(notificationHandle.value)
     }.map(_ => ())
 
@@ -86,7 +87,8 @@ case class AdsNotificationSampleWithTimestamp(handle: Long, timestamp: Instant, 
 
   def close(): Task[Unit] = {
     for {
-      _ <- Task.eval(receiveSubscription.cancel())
+      _ <- socketClient.stopReading()
+      _ <- socketClient.stopWriting()
       _ <- socketClient.close()
     } yield ()
   }
@@ -136,6 +138,7 @@ case class AdsNotificationSampleWithTimestamp(handle: Long, timestamp: Instant, 
 
       // Execute in parallel to avoid race conditions. Or can we be sure we don't need this? TODO
       for {
+//        _ <- Task.eval(println(s"Running command ${command}"))
         r <- Task.parMap2(writeCommand, receiveResponse) { case (_, response) => response }
         _ <- checkResponse(r)
       } yield r
@@ -164,14 +167,15 @@ case class AdsNotificationSampleWithTimestamp(handle: Long, timestamp: Instant, 
     .fromTask(tcpObservable)
     .flatten
     .map(ByteVector.apply)
-    .flatMap(bytes => Observable.fromTask(attemptToTask(Codec.decode[AmsPacket](BitVector(bytes)))).onErrorRecoverWith {
+    .flatMap(bytes => Observable.fromTask(decodeAttemptToTask(Codec.decode[AmsPacket](BitVector(bytes)))).onErrorRecoverWith {
       case ex @ AdsClientException(e) =>
-        println(s"Error decoding packet ${bytes.toHex}: ${e}")
+//        println(s"Error decoding packet ${bytes.toHex}: ${e}")
         Observable.raiseError(ex)
     } )
     .map(_.value)
-//    .doOnNext(p => println(s"Received AMS packet ${p}"))
-//    .doOnError(e => println(s"Receive error: ${e}"))
+//    .doOnTerminate(e => println(s"Received packets completed. Error: ${e}"))
+//    .doOnNext(p => println(s"Received AMS packet type ${p.header.commandId}"))
+    .doOnError(e => println(s"Error in receive packets: ${e}"))
     .share
 
   // Observable of all responses from the ADS server
@@ -192,11 +196,11 @@ case class AdsNotificationSampleWithTimestamp(handle: Long, timestamp: Instant, 
       .flatMap(Observable.fromIterable)
 //      .doOnNext(n => println(s"Got notification ${n}"))
 
-  private val receiveSubscription: Cancelable = receivedPackets.subscribe()
+  receivedPackets.subscribe()
 }
 
 object AdsCommandClient {
-  def attemptToTask[T](attempt: Attempt[T]): Task[T] =
+  def decodeAttemptToTask[T](attempt: Attempt[T]): Task[T] =
     attempt.fold(cause => Task.raiseError(AdsClientException(cause.messageWithContext)), Task.pure)
 }
 
