@@ -50,7 +50,7 @@ case class AdsNotificationSampleWithTimestamp(handle: Long, timestamp: Instant, 
 
   def releaseVariableHandle(handle: VariableHandle): Task[Unit] = for {
     encodedHandle <- decodeAttemptToTask(codecs.uint32L.encode(handle.value))
-    _ = println("Releaseing variable handle")
+//    _ = println("Releaseing variable handle")
     _ <- runCommand[AdsWriteCommandResponse] {
       AdsWriteCommand(0x0000F006, 0x00000000, encodedHandle.toByteVector)
     }
@@ -87,7 +87,8 @@ case class AdsNotificationSampleWithTimestamp(handle: Long, timestamp: Instant, 
 
   def close(): Task[Unit] = {
     for {
-      _ <- Task.eval(receiveSubscription.cancel())
+      _ <- socketClient.stopReading()
+      _ <- socketClient.stopWriting()
       _ <- socketClient.close()
     } yield ()
   }
@@ -137,7 +138,7 @@ case class AdsNotificationSampleWithTimestamp(handle: Long, timestamp: Instant, 
 
       // Execute in parallel to avoid race conditions. Or can we be sure we don't need this? TODO
       for {
-        _ <- Task.eval(println(s"Running command ${command}"))
+//        _ <- Task.eval(println(s"Running command ${command}"))
         r <- Task.parMap2(writeCommand, receiveResponse) { case (_, response) => response }
         _ <- checkResponse(r)
       } yield r
@@ -168,13 +169,13 @@ case class AdsNotificationSampleWithTimestamp(handle: Long, timestamp: Instant, 
     .map(ByteVector.apply)
     .flatMap(bytes => Observable.fromTask(decodeAttemptToTask(Codec.decode[AmsPacket](BitVector(bytes)))).onErrorRecoverWith {
       case ex @ AdsClientException(e) =>
-        println(s"Error decoding packet ${bytes.toHex}: ${e}")
+//        println(s"Error decoding packet ${bytes.toHex}: ${e}")
         Observable.raiseError(ex)
     } )
     .map(_.value)
-    .doOnTerminate(_ => println("Received packets completed"))
-    .doOnNext(p => println(s"Received AMS packet ${p}"))
-    .doOnError(e => println(s"Receive error: ${e}"))
+//    .doOnTerminate(e => println(s"Received packets completed. Error: ${e}"))
+//    .doOnNext(p => println(s"Received AMS packet type ${p.header.commandId}"))
+    .doOnError(e => println(s"Error in receive packets: ${e}"))
     .share
 
   // Observable of all responses from the ADS server
@@ -195,7 +196,7 @@ case class AdsNotificationSampleWithTimestamp(handle: Long, timestamp: Instant, 
       .flatMap(Observable.fromIterable)
 //      .doOnNext(n => println(s"Got notification ${n}"))
 
-  private val receiveSubscription: Cancelable = receivedPackets.subscribe()
+  receivedPackets.subscribe()
 }
 
 object AdsCommandClient {

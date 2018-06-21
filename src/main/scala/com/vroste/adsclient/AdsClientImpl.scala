@@ -14,13 +14,13 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
   override def read[T](varName: String, codec: Codec[T]): Task[T] = {
     for {
       varHandle <- client.getVariableHandle(varName)
-//      _ <- resourcesToBeReleased.increment
+      _ <- resourcesToBeReleased.increment
       data <- client
         .readVariable(varHandle, codec.sizeBound.upperBound.getOrElse(codec.sizeBound.lowerBound))
         .doOnFinish { _ =>
           client.releaseVariableHandle(varHandle)
         }
-//      _ <- resourcesToBeReleased.decrement
+      _ <- resourcesToBeReleased.decrement
       decoded <- decodeAttemptToTask(codec.decode(BitVector(data)))
     } yield decoded.value
   }
@@ -28,14 +28,14 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
   override def write[T](varName: String, value: T, codec: Codec[T]): Task[Unit] = {
     for {
       varHandle <- client.getVariableHandle(varName)
-//      _ <- resourcesToBeReleased.increment
+      _ <- resourcesToBeReleased.increment
       encoded <- decodeAttemptToTask(codec.encode(value))
       _ <- client
         .writeToVariable(varHandle, encoded.toByteVector)
         .doOnFinish { _ =>
           client.releaseVariableHandle(varHandle)
         }
-//      _ <- resourcesToBeReleased.decrement
+      _ <- resourcesToBeReleased.decrement
     } yield ()
   }
 
@@ -66,7 +66,7 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
                 _ <- client.releaseVariableHandle(varHandle)
                 _ <- resourcesToBeReleased.decrement
               } yield ()
-                ).forkAndForget
+                ).forkAndForget // Important
             })
       }.flatten
     }
@@ -98,12 +98,12 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
   override def consumerFor[T](varName: String, codec: Codec[T]): Consumer[T, Unit] = {
     def before = for {
       handle <- client.getVariableHandle(varName)
-//      _ <- resourcesToBeReleased.increment
+      _ <- resourcesToBeReleased.increment
     } yield handle
 
     def after(handle: VariableHandle) = for {
       _ <- client.releaseVariableHandle(handle)
-//      _ <- resourcesToBeReleased.decrement
+      _ <- resourcesToBeReleased.decrement
     } yield ()
 
     consumerBracket[T, VariableHandle](before, after) {
@@ -143,9 +143,9 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
 
   override def close(): Task[Unit] =
     for {
-      _ <- Task.eval(println("Waiting for outstanding resources to close before closing"))
-      _ <- resourcesToBeReleased.awaitZero.asyncBoundary
-      _ <- Task.eval(println("Closing client"))
+//      _ <- Task.eval(println("Waiting for outstanding resources to close before closing"))
+      _ <- resourcesToBeReleased.awaitZero
+//      _ <- Task.eval(println("Closing client"))
       _ <- client.close()
     } yield ()
 }
