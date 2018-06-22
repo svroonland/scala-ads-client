@@ -6,19 +6,29 @@ Beckhoff TwinCAT ADS client for the Scala language
 This is a Scala-native reactive client for [Beckhoff TwinCAT PLC](http://www.beckhoff.com/TwinCAT/). 
 
 ## Features
-* Fully non-blocking asynchronous IO, powered by Monix [Task](https://monix.io/docs/3x/eval/task.html). 
-* Get a continuous stream of notifications for PLC variables as Monix [Observable](https://monix.io/docs/3x/reactive/observable.html)s.
-* Writing of elements in an Observable to PLC variables
-* Typesafe support for reading and writing of custom data types (case classes) to PLC structs via typeclasses 
+* Get a continuous stream of notifications for PLC variables as Monix [Observable](https://monix.io/docs/3x/reactive/observable.html)s. 
+* Compose and transform Observables to achieve more complex behavior. 
+* Streaming of elements in an Observable to PLC variables
+* Easy reading and writing of custom data types (case classes) to PLC structs
+* Fully non-blocking async IO.
 
 Built on top of [monix](https://github.com/monix/monix), [monix-nio](https://github.com/monix/monix-nio) and [cats](https://github.com/typelevel/cats).
 
 # Documentation
 
 ## Connect
-The `AdsClient` object provides a `connect` method which will asynchronously connect to 
+The `AdsClient` object provides a `connect` method which will asynchronously connect to an ADS router.
+
+*Important* a route must be added to the ADS router to allow traffic from the source AMS ID.
+
 ```scala
-val settings = AdsConnectionSettings(...)
+import com.vroste.adsclient._
+import com.vroste.adsclient.codec.AdsCodecs._
+
+import monix.eval.Task
+import monix.execution.Scheduler.Implicits.global
+
+val settings = AdsConnectionSettings(AmsNetId.fromString("10.211.55.3.1.1"), 801, AmsNetId.fromString("10.211.55.3.10.10"), 123, "localhost")
 val clientT: Task[AdsClient] = AdsClient.connect(settings)
 
 // Example, in a real application you should flatMap the task
@@ -30,16 +40,40 @@ clientT.runOnComplete {
 
 ## Reading
 To read a PLC variable once:
-```
+```scala
 val client: AdsClient
-val result: Task[Int] = client.read[Int]("MAIN.myIntegerVar")
+val result: Task[Int] = client.read("MAIN.myIntegerVar", int)
 ```
+
+## Codecs
+The second parameter to `read()` in the example above is the codec which translates between the PLC datatype and the scala datatype. Because Scala does not have a one to one mapping for all PLC datatypes, the codec has to be provided explicitly. Codecs for unsigned integer types will map PLC values to the `>=0` range of the appropriate Scala data type.
+
+Available codecs are named after the PLC datatype, in the `AdsCodecs` object:
+
+| Codec | PLC data type | Scala data type | Notes |
+|-------|---------------|-----------------| ------|
+| `bool`  | BOOL          | Boolean         |       |
+| `byte`  | BYTE          | Byte            |       |
+| `word`  | WORD          | Int             | 16 bit unsigned integer |
+| `dword` | DWORD         | Long            | 32 bit unsigned integer |
+| `sint`  | SINT          | Int             | 8 bit signed integer       |
+| `usint` | USINT         | Int             | 8 bit unsigned integer      |
+| `int`   | INT           | Int             | 16 bit signed integer      |
+| `uint`  | INT           | Int             | 16 bit unsigned integer       |
+| `dint`  | INT           | Int             | 32 bit signed integer       |
+| `udint`  | INT           | Long             | 32 bit unsigned integer       |
+| `real`  | REAL           | Float             | 32 bit floating point number     |
+| `lreal`  | LREAL           | Double             | 64 bit floating point number     |
+| `string`  | STRING(80)           | String             | 80 is the default string length     |
+| `stringN(maxLength)`  | STRING(maxLength)           | String | String of the given maximum length (maxLength + 1 bytes) |
+| `array[T](length, codecForT)` | ARRAY [1..length] OF T | List[T] |
+
 
 ## Notifications
-Instead of reading once, the recommended way to read is to make use of ADS Notifications of changes to a PLC variable. The `AdsClient` offers these as an `Observable`.
+The `AdsClient` can provide notifications for changes to a PLC variable as an `Observable`. This is the recommended way to repeatedly check a variable for changes without polling.
 
 ```scala
-val notifications: Observable[AdsNotification[Int]] = client.notificationsFor[Int]("MAIN.myIntegerVar")
+val notifications: Observable[AdsNotification[String]] = client.notificationsFor("MAIN.myStringVar", string)
 
 // Perform further operations on this observable, such as filtering, mapping, joining with observables
 // for other PLC variables, etc. 
@@ -47,28 +81,38 @@ val notifications: Observable[AdsNotification[Int]] = client.notificationsFor[In
 notifications.subscribe(Consumer.foreach(value => println(s"Got value ${value.value} at timestamp ${value.timestamp}"))
 ```
 
-Note that the notifications are registered for each `subscribe()` and that they are only created upon subscription. The notification is ended when the subscription stops.
+Note that the notifications are registered for each `subscribe()` and that they are only started upon subscription. The notification is ended when the subscription stops.
 
 ## Writing
-The ADS client provides a method for writing to a PLC variable once. This methods returns a task which is completed when the write is complete.
+The ADS client provides a method for writing to a PLC variable once. This methods returns a `Task` which is completed when the write is complete.
 ```scala
-val writeComplete: Task[Unit] = client.write("MAIN.myIntegerVar", 5)
+val writeComplete: Task[Unit] = client.write("MAIN.myUnsignedIntegerVar", uint)
 ```
 
 ## Writing an Observable
-When you have an `Observable` of values and you want to write to a PLC variable for each emitted value, use the following:
+When you have an `Observable` of values and you want to write (stream) it to a PLC variable for each emitted value, use the following:
 ```scala
 val strings = Observable.interval(15.seconds)
     .take(10)
     .map(value => s"The next value is ${value}")
     
-val consumer = client.consumerFor[String]("MAIN.myStringVar")
+val consumer = client.consumerFor("MAIN.myStringVar", string)
 
 val done: Task[Unit] = strings.consumeWith(consumer)
 ```
 
 ## Custom datatypes
-By declaring an `AdsCodec[T]` for your custom type T, the `AdsClient` can properly serialize and deserialize values of type `T` to the PLC data representation. You can compose a new codec existing ones by using the following syntax.
+Codecs can be composed together to map to custom data types such as your own value classes or case classes
+
+### Value classes
+A value class can be mapped to a PLC primitive value type. This allows you to write Scala code with more descriptive and possibly restricted types. The automatic conversion is thanks to [Shapeless](https://github.com/milessabin/shapeless).
+```scala
+case class Degrees(value: Int) extends AnyVal
+val counterCodec: Codec[MyCounterType] = uint.as
+```
+
+### STRUCTs to case classes
+Using the same technique, PLC STRUCTs can be mapped to a Scala case class as follows. 
 
 As an example, assume that in the PLC code a `STRUCT` with 3 members is defined:
 ```
@@ -81,16 +125,10 @@ END_STRUCT
 END_TYPE
 ```
 
-Define the codec on the Scala side as follows:
+Define the data type and codec on the Scala side as follows:
 
 ```scala
-import cats.syntax.apply._
-import com.vroste.adsclient.DefaultReadables._
-import com.vroste.adsclient.DefaultWritables._
+case class MyDummyObject(a: Int, b: Int, c: Boolean)
 
-case class MyCustomType(a: Int, b: Int, c: Boolean)
-
-implicit val myCustomTypeCodec: AdsCodec[MyCustomType] =
-  (AdsCodec.of[Int], AdsCodec.of[Int], AdsCodec.of[Boolean])
-    .imapN(MyCustomType.apply)(Function.unlift(MyCustomType.unapply))
+val myDummyObjectCodec: Codec[MyDummyObject] = (int :: int :: bool).as
 ```
