@@ -39,6 +39,9 @@ trait AdsCodecs {
     }
   }
 
+  def array[T](length: Int, elementCodec: Codec[T]): Codec[List[T]] =
+    scodecs.listOfN(scodecs.provide(length), elementCodec)
+
   // TODO TIME, TIME_OF_DAY, DATE, DATE_AND_TIME, ENUMcomp
 }
 
