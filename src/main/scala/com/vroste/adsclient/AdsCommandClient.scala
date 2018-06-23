@@ -133,10 +133,9 @@ case class AdsNotificationSampleWithTimestamp(handle: Long, timestamp: Instant, 
               new IllegalArgumentException(s"Expected response for command ${command}, got response $r"))
         })
         .firstL
-        .asyncBoundary
-        .timeout(5.seconds)
+        .timeout(5.seconds) // TODO configurable
 
-      // Execute in parallel to avoid race conditions. Or can we be sure we don't need this? TODO
+      // Execute in parallel to avoid race conditions
       for {
 //        _ <- Task.eval(println(s"Running command ${command}"))
         r <- Task.parMap2(writeCommand, receiveResponse) { case (_, response) => response }
@@ -147,7 +146,7 @@ case class AdsNotificationSampleWithTimestamp(handle: Long, timestamp: Instant, 
 
   def checkResponse(r: AdsResponse): Task[Unit] =
     if (r.errorCode != 0L) {
-      Task.raiseError(new IllegalArgumentException(s"ADS error 0x${r.errorCode.toHexString}"))
+      Task.raiseError(AdsClientException(s"ADS error 0x${r.errorCode.toHexString}"))
     } else {
       Task.unit
     }

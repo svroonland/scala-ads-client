@@ -16,7 +16,7 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
       varHandle <- client.getVariableHandle(varName)
       _ <- resourcesToBeReleased.increment
       data <- client
-        .readVariable(varHandle, codec.sizeBound.upperBound.getOrElse(codec.sizeBound.lowerBound))
+        .readVariable(varHandle, codec.sizeBound.upperBound.getOrElse(codec.sizeBound.lowerBound) / 8)
         .doOnFinish { _ =>
           client.releaseVariableHandle(varHandle)
         }
@@ -56,7 +56,7 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
         for {
           varHandle <- client.getVariableHandle(varName)
                     _ <- resourcesToBeReleased.increment
-          readLength = codec.sizeBound.upperBound.getOrElse(codec.sizeBound.lowerBound)
+          readLength = codec.sizeBound.upperBound.getOrElse(codec.sizeBound.lowerBound) / 8
           notificationHandle <- client.getNotificationHandle(varHandle, readLength, 0, 100) // TODO cycletime
         } yield
           f(notificationHandle)
