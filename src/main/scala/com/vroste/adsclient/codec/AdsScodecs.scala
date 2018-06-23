@@ -7,7 +7,7 @@ import scodec.{Attempt, Codec, DecodeResult, Err, SizeBound, codecs => scodecs}
   * Codecs for PLC variable types
   */
 trait AdsCodecs {
-  val bool: Codec[Boolean] = scodecs.bool
+  val bool: Codec[Boolean] = scodecs.bool(8)
   val byte: Codec[Byte] = scodecs.byte
   val word: Codec[Int] = scodecs.uint16L
   val dword: Codec[Long] = scodecs.uint32L
@@ -39,8 +39,15 @@ trait AdsCodecs {
     }
   }
 
-  def array[T](length: Int, elementCodec: Codec[T]): Codec[List[T]] =
-    scodecs.listOfN(scodecs.provide(length), elementCodec)
+  def array[T](length: Int, elementCodec: Codec[T]): Codec[List[T]] = {
+    val codec = scodecs.listOfN(scodecs.provide(length), elementCodec)
+
+    new Codec[List[T]] {
+      override def decode(bits: BitVector): Attempt[DecodeResult[List[T]]] = codec.decode(bits)
+      override def encode(value: List[T]): Attempt[BitVector] = codec.encode(value)
+      override def sizeBound: SizeBound = SizeBound.exact(length * elementCodec.sizeBound.lowerBound)
+    }
+  }
 
   // TODO TIME, TIME_OF_DAY, DATE, DATE_AND_TIME, ENUMcomp
 }

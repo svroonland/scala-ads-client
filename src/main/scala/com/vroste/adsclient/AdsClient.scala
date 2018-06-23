@@ -80,6 +80,7 @@ object AdsClient {
     val socketClient = monix.nio.tcp.readWriteAsync(settings.hostname, settings.port, 1024)
     for {
       _ <- socketClient.tcpConsumer
+      _ <- socketClient.tcpObservable
     } yield new AdsClientImpl(new AdsCommandClient(settings, socketClient))
   }
 }
