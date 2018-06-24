@@ -1,5 +1,7 @@
 package com.vroste.adsclient
 
+import java.time.{LocalDate, LocalDateTime, LocalTime}
+
 import com.vroste.adsclient.codec.AdsCodecs._
 import monix.execution.Scheduler.Implicits.global
 import monix.reactive.Consumer
@@ -38,6 +40,30 @@ class AdsClientSpec extends AsyncFlatSpec with MustMatchers {
       var4 <- client.read("MAIN.var4", int)
       _ = println(s"Var1: ${var1}, Var2: ${var2}, Var4: ${var4}")
     } yield succeed
+    result.runAsync
+  }
+
+  it must "read a date" in {
+    val result = for {
+      client <- AdsClient.connect(settings)
+      result <- client.read("MAIN.var7", date)
+    } yield result mustBe LocalDate.of(2016, 3, 8)
+    result.runAsync
+  }
+
+  it must "read a date and time" in {
+    val result = for {
+      client <- AdsClient.connect(settings)
+      result <- client.read("MAIN.var9", dateAndTime)
+    } yield result mustBe LocalDateTime.of(2016, 3, 8, 12, 13, 14)
+    result.runAsync
+  }
+
+  it must "read a time of day" in {
+    val result = for {
+      client <- AdsClient.connect(settings)
+      result <- client.read("MAIN.var10", timeOfDay)
+    } yield result mustBe LocalTime.of(15, 36, 30, 123000000)
     result.runAsync
   }
 

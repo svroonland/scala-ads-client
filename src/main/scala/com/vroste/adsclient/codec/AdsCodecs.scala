@@ -1,7 +1,11 @@
 package com.vroste.adsclient.codec
 
+import java.time._
+
 import scodec.bits.BitVector
 import scodec.{Attempt, Codec, DecodeResult, Err, SizeBound, codecs => scodecs}
+
+import scala.concurrent.duration.{FiniteDuration, _}
 
 /**
   * Codecs for PLC variable types
@@ -20,8 +24,25 @@ trait AdsCodecs {
   val real: Codec[Float] = scodecs.floatL
   val lreal: Codec[Double] = scodecs.doubleL
 
+  val instant: Codec[Instant] = dword.xmap(Instant.ofEpochSecond, _.getEpochSecond)
+
+  private val utc = ZoneOffset.UTC
+
+  val date: Codec[LocalDate] =
+    instant.xmap(_.atOffset(utc).toLocalDate, Instant.from)
+
+  val dateAndTime: Codec[LocalDateTime] = {
+    instant.xmap(_.atOffset(utc).toLocalDateTime, _.atOffset(utc).toInstant)
+  }
+
+  val time: Codec[FiniteDuration] = dword.xmapc(_.milliseconds)(_.toMillis)
+
+  private val milliToNano = 1000000
+  val timeOfDay: Codec[LocalTime] = dword.xmapc(ms => LocalTime.ofNanoOfDay(ms * milliToNano))(_.toNanoOfDay / milliToNano)
+
   val maxDefaultStringLength = 80
   val string = stringN(maxDefaultStringLength)
+  val wstring = scodecs.utf8
 
   def stringN(maxLength: Int): Codec[String] = {
     val baseCodec = scodecs.cstring.narrow[String](s =>
@@ -48,8 +69,6 @@ trait AdsCodecs {
       override def sizeBound: SizeBound = SizeBound.exact(length * elementCodec.sizeBound.lowerBound)
     }
   }
-
-  // TODO TIME, TIME_OF_DAY, DATE, DATE_AND_TIME, ENUMcomp
 }
 
 object AdsCodecs extends AdsCodecs
