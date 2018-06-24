@@ -13,6 +13,7 @@ sealed trait AdsCommand {
 }
 
 object AdsCommand {
+
   case class AdsReadCommand(indexGroup: Long, indexOffset: Long, readLength: Long) extends AdsCommand {
     override type ResponseType = AdsReadCommandResponse
   }
@@ -59,28 +60,28 @@ object AdsCommand {
 
   implicit val readCommandCodec: Codec[AdsReadCommand] =
     (uint32L :: uint32L :: uint32L)
-    .as[AdsReadCommand]
+      .as[AdsReadCommand]
 
   implicit val writeCommandCodec: Codec[AdsWriteCommand] =
     (uint32L :: uint32L :: variableSizeBytesLong(uint32L, bytes))
-    .as[AdsWriteCommand]
+      .as[AdsWriteCommand]
 
   implicit val writeReadCommandCodec: Codec[AdsWriteReadCommand] =
     (uint32L :: uint32L :: uint32L :: variableSizeBytesLong(uint32L, bytes)).as[AdsWriteReadCommand]
 
   implicit val addDeviceNotificationCommandCodec: Codec[AdsAddDeviceNotificationCommand] =
     (uint32L ~ uint32L ~ uint32L ~ Codec[AdsTransmissionMode] ~ uint32L ~ uint32L <~ ignore(16 * 8))
-    .flattenLeftPairs
-    .as[AdsAddDeviceNotificationCommand]
+      .flattenLeftPairs
+      .as[AdsAddDeviceNotificationCommand]
 
   implicit val deleteDeviceNotificationCommandCodec: Codec[AdsDeleteDeviceNotificationCommand] =
-    (uint32L).as[AdsDeleteDeviceNotificationCommand]
+    uint32L.as[AdsDeleteDeviceNotificationCommand]
 
-  implicit val codec = (addDeviceNotificationCommandCodec :+: writeReadCommandCodec :+: writeCommandCodec :+: readCommandCodec :+: deleteDeviceNotificationCommandCodec).choice.as[AdsCommand]
+  implicit val codec: Codec[AdsCommand] = (addDeviceNotificationCommandCodec :+: writeReadCommandCodec :+: writeCommandCodec :+: readCommandCodec :+: deleteDeviceNotificationCommandCodec).choice.as[AdsCommand]
 
   def codecForCommandId(commandId: Int): Codec[Either[AdsCommand, AdsResponse]] =
-  codec.exmap(r => Attempt.successful(Left(r)), {
-    case Left(r) => Attempt.successful(r)
-    case Right(_) => Attempt.failure(Err(s"not a value of type AdsCommand"))
-  })
+    codec.exmap(r => Attempt.successful(Left(r)), {
+      case Left(r) => Attempt.successful(r)
+      case Right(_) => Attempt.failure(Err(s"not a value of type AdsCommand"))
+    })
 }

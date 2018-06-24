@@ -35,7 +35,7 @@ trait AdsCodecs {
     new Codec[String] {
       override def decode(bits: BitVector): Attempt[DecodeResult[String]] = baseCodec.decode(bits)
       override def encode(value: String): Attempt[BitVector] = baseCodec.encode(value)
-      override def sizeBound: SizeBound = SizeBound.atMost(maxLength + 1)
+      override def sizeBound: SizeBound = SizeBound.atMost((maxLength + 1) * 8)
     }
   }
 

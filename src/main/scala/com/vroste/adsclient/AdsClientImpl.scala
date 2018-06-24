@@ -1,8 +1,7 @@
 package com.vroste.adsclient
 
-import com.vroste.adsclient.AdsCommandClient.decodeAttemptToTask
+import com.vroste.adsclient.AdsCommandClient.attemptToTask
 import monix.eval.Task
-import monix.execution.Cancelable
 import monix.reactive.{Consumer, Observable}
 import scodec.Codec
 import scodec.bits.BitVector
@@ -21,7 +20,7 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
           client.releaseVariableHandle(varHandle)
         }
       _ <- resourcesToBeReleased.decrement
-      decoded <- decodeAttemptToTask(codec.decode(BitVector(data)))
+      decoded <- attemptToTask(codec.decode(BitVector(data)))
     } yield decoded.value
   }
 
@@ -29,7 +28,7 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
     for {
       varHandle <- client.getVariableHandle(varName)
       _ <- resourcesToBeReleased.increment
-      encoded <- decodeAttemptToTask(codec.encode(value))
+      encoded <- attemptToTask(codec.encode(value))
       _ <- client
         .writeToVariable(varHandle, encoded.toByteVector)
         .doOnFinish { _ =>
@@ -77,7 +76,7 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
         .flatMap { sample =>
           Observable.fromTask {
             for {
-              decodeResult <- decodeAttemptToTask(codec.decode(BitVector(sample.data)))
+              decodeResult <- attemptToTask(codec.decode(BitVector(sample.data)))
             } yield AdsNotification(decodeResult.value, sample.timestamp)
           }
         }
@@ -110,7 +109,7 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
       Consumer.foreachTask {
         case (handle, value) =>
           for {
-            encoded <- decodeAttemptToTask(codec.encode(value))
+            encoded <- attemptToTask(codec.encode(value))
             _ <- client.writeToVariable(handle, encoded.toByteVector)
           } yield ()
       }

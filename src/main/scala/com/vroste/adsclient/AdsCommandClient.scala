@@ -5,22 +5,16 @@ import java.util.concurrent.atomic.AtomicInteger
 
 import com.vroste.adsclient.AdsCommand._
 import com.vroste.adsclient.AdsResponse._
-import monix.eval.{MVar, Task}
-import monix.execution.{Cancelable, Scheduler}
+import com.vroste.adsclient.codec.AdsCodecs
+import monix.eval.Task
+import monix.execution.Scheduler
 import monix.nio.tcp.AsyncSocketChannelClient
 import monix.reactive.Observable
-import scodec.bits.{BitVector, ByteOrdering, ByteVector}
-import scodec.{Attempt, Codec, codecs}
+import monix.reactive.observables.ConnectableObservable
+import scodec.bits.{BitVector, ByteVector}
+import scodec.{Attempt, Codec}
 
 import scala.reflect.ClassTag
-import scala.util.Try
-
-case class AdsConnectionSettings(amsNetIdTarget: AmsNetId,
-                                 amsPortTarget: Int,
-                                 amsNetIdSource: AmsNetId,
-                                 amsPortSource: Int,
-                                 hostname: String,
-                                 port: Int = 48898)
 
 case class AdsNotificationSampleWithTimestamp(handle: Long, timestamp: Instant, data: ByteVector)
 
@@ -36,25 +30,31 @@ case class AdsNotificationSampleWithTimestamp(handle: Long, timestamp: Instant, 
 
   import AdsCommandClient._
 
-  def getVariableHandle(varName: String): Task[VariableHandle] = {
+  private val handleCodec = AdsCodecs.udint
 
+  def getVariableHandle(varName: String): Task[VariableHandle] =
     for {
-      encodedVarName <- decodeAttemptToTask(codecs.cstring.encode(varName))
-      command = AdsWriteReadCommand(0x0000F003, 0x00000000, 4, encodedVarName.toByteVector)
+      encodedVarName <- attemptToTask(AdsCodecs.string.encode(varName))
+      command = AdsWriteReadCommand(
+        indexGroup = 0x0000F003,
+        indexOffset = 0x00000000,
+        readLength = 4,
+        values = encodedVarName.toByteVector
+      )
       response <- runCommand[AdsWriteReadCommandResponse](command)
-      handle <- Task.fromTry(Try {
-        response.data.toLong(signed = false, ordering = ByteOrdering.LittleEndian)
-      })
+      handle <- attemptToTask(handleCodec.decodeValue(response.data.toBitVector))
     } yield VariableHandle(handle)
-  }
 
-  def releaseVariableHandle(handle: VariableHandle): Task[Unit] = for {
-    encodedHandle <- decodeAttemptToTask(codecs.uint32L.encode(handle.value))
-//    _ = println("Releaseing variable handle")
-    _ <- runCommand[AdsWriteCommandResponse] {
-      AdsWriteCommand(0x0000F006, 0x00000000, encodedHandle.toByteVector)
-    }
-  } yield ()
+  def releaseVariableHandle(handle: VariableHandle): Task[Unit] =
+    for {
+      encodedHandle <- attemptToTask(handleCodec.encode(handle.value))
+      command = AdsWriteCommand(
+        indexGroup = 0x0000F006,
+        indexOffset = 0x00000000,
+        values = encodedHandle.toByteVector
+      )
+      _ <- runCommand[AdsWriteCommandResponse](command)
+    } yield ()
 
   def getNotificationHandle(variableHandle: VariableHandle,
                             length: Long,
@@ -77,12 +77,12 @@ case class AdsNotificationSampleWithTimestamp(handle: Long, timestamp: Instant, 
 
   def writeToVariable(variableHandle: VariableHandle, value: ByteVector): Task[Unit] =
     runCommand[AdsWriteCommandResponse] {
-      AdsWriteCommand(0x0000F005, variableHandle.value, value)
+      AdsWriteCommand(indexGroup = 0x0000F005, indexOffset = variableHandle.value, values = value)
     }.map(_ => ())
 
   def readVariable(variableHandle: VariableHandle, size: Long): Task[ByteVector] =
     runCommand[AdsReadCommandResponse] {
-      AdsReadCommand(0x0000F005, variableHandle.value, size)
+      AdsReadCommand(indexGroup = 0x0000F005, indexOffset = variableHandle.value, readLength = size)
     }.map(_.data)
 
   def close(): Task[Unit] = {
@@ -96,53 +96,44 @@ case class AdsNotificationSampleWithTimestamp(handle: Long, timestamp: Instant, 
   /**
     * Run a command, await the response to the command and return it
     */
-  private def runCommand[R <: AdsResponse : ClassTag](command: AdsCommand): Task[R] = {
-    generateInvokeId.flatMap { invokeId =>
-      val header = AmsHeader(
-        amsNetIdTarget = settings.amsNetIdTarget,
-        amsPortTarget = settings.amsPortTarget,
-        amsNetIdSource = settings.amsNetIdSource,
-        amsPortSource = settings.amsPortSource,
-        commandId = AdsCommand.commandId(command),
-        stateFlags = 4,
-        errorCode = 0,
-        invokeId = invokeId,
-        data = Left(command)
-      )
-      val packet = AmsPacket(header)
+  private def runCommand[R <: AdsResponse : ClassTag](command: AdsCommand): Task[R] = for {
+    invokeId <- generateInvokeId
+    header = AmsHeader(
+      amsNetIdTarget = settings.amsNetIdTarget,
+      amsPortTarget = settings.amsPortTarget,
+      amsNetIdSource = settings.amsNetIdSource,
+      amsPortSource = settings.amsPortSource,
+      commandId = AdsCommand.commandId(command),
+      stateFlags = 4, // ADS command
+      errorCode = 0,
+      invokeId = invokeId,
+      data = Left(command)
+    )
+    packet = AmsPacket(header)
+    bytes <- attemptToTask(Codec[AmsPacket].encode(packet))
 
-      val bytes = Codec[AmsPacket].encode(packet).getOrElse(throw new IllegalArgumentException("Unable to encode packet"))
-        .toByteArray
+    consumer <- socketClient.tcpConsumer
+    writeCommand = consumer.apply(Observable.pure(bytes.toByteArray))
 
-      val writeCommand = socketClient.tcpConsumer
-        .flatMap { consumer =>
-          consumer.apply(Observable.pure(bytes))
-        }
+    classTag = implicitly[ClassTag[R]]
 
-      val classTag = implicitly[ClassTag[R]]
+    receiveResponse = receivedPackets
+      .filter(_.header.invokeId == invokeId)
+      .flatMap(_.header.data match {
+        case Right(r) if r.getClass == classTag.runtimeClass =>
+          Observable.pure(r.asInstanceOf[R])
+        case r =>
+          Observable.raiseError(
+            new IllegalArgumentException(s"Expected response for command ${command}, got response $r"))
+      })
+      .firstL
+      .timeout(settings.timeout)
 
-      import scala.concurrent.duration._
-
-      val receiveResponse = receivedPackets
-        .filter(_.header.invokeId == invokeId)
-        .flatMap(_.header.data match {
-          case Right(r) if r.getClass == classTag.runtimeClass =>
-            Observable.pure(r.asInstanceOf[R])
-          case r =>
-            Observable.raiseError(
-              new IllegalArgumentException(s"Expected response for command ${command}, got response $r"))
-        })
-        .firstL
-        .timeout(5.seconds) // TODO configurable
-
-      // Execute in parallel to avoid race conditions
-      for {
-//        _ <- Task.eval(println(s"Running command ${command}"))
-        r <- Task.parMap2(writeCommand, receiveResponse) { case (_, response) => response }
-        _ <- checkResponse(r)
-      } yield r
-    }
-  }
+    // Execute in parallel to avoid race conditions
+    _ <- Task.eval(println(s"Running command ${command}"))
+    response <- Task.parMap2(writeCommand, receiveResponse) { case (_, response) => response }
+    _ <- checkResponse(response)
+  } yield response
 
   def checkResponse(r: AdsResponse): Task[Unit] =
     if (r.errorCode != 0L) {
@@ -156,26 +147,21 @@ case class AdsNotificationSampleWithTimestamp(handle: Long, timestamp: Instant, 
     lastInvokeId.getAndIncrement()
   }
 
-  private lazy val tcpObservable: Task[Observable[Array[Byte]]] =
-    socketClient.tcpObservable
-      .map(_.share)
-//      .map(_.doOnTerminate(reason => println(s"Stopping with reason ${reason}")))
-      .memoize // Needed to avoid creating the observable more than once
+  private lazy val receivedPackets: ConnectableObservable[AmsPacket] =
+    Observable
+      .fromTask(socketClient.tcpObservable.memoize)
+      .flatten
+      .map(ByteVector.apply)
+      .flatMap(bytes => Observable.fromTask(attemptToTask(Codec.decode[AmsPacket](BitVector(bytes)))).onErrorRecoverWith {
+        case ex@AdsClientException(_) =>
+          Observable.raiseError(ex)
+      })
+      .map(_.value)
+      .doOnNext(p => println(s"Received AMS packet type ${p.header.commandId}"))
+      .doOnError(e => println(s"Error in receive packets: ${e}"))
+      .publish
 
-  private lazy val receivedPackets: Observable[AmsPacket] = Observable
-    .fromTask(tcpObservable)
-    .flatten
-    .map(ByteVector.apply)
-    .flatMap(bytes => Observable.fromTask(decodeAttemptToTask(Codec.decode[AmsPacket](BitVector(bytes)))).onErrorRecoverWith {
-      case ex @ AdsClientException(e) =>
-//        println(s"Error decoding packet ${bytes.toHex}: ${e}")
-        Observable.raiseError(ex)
-    } )
-    .map(_.value)
-//    .doOnTerminate(e => println(s"Received packets completed. Error: ${e}"))
-//    .doOnNext(p => println(s"Received AMS packet type ${p.header.commandId}"))
-    .doOnError(e => println(s"Error in receive packets: ${e}"))
-    .share
+  receivedPackets.connect()
 
   // Observable of all responses from the ADS server
   private lazy val responses: Observable[AdsResponse] =
@@ -193,13 +179,10 @@ case class AdsNotificationSampleWithTimestamp(handle: Long, timestamp: Instant, 
         } yield AdsNotificationSampleWithTimestamp(sample.handle, stamp.timestamp, sample.data)
       }
       .flatMap(Observable.fromIterable)
-//      .doOnNext(n => println(s"Got notification ${n}"))
-
-  receivedPackets.subscribe()
 }
 
 object AdsCommandClient {
-  def decodeAttemptToTask[T](attempt: Attempt[T]): Task[T] =
+  def attemptToTask[T](attempt: Attempt[T]): Task[T] =
     attempt.fold(cause => Task.raiseError(AdsClientException(cause.messageWithContext)), Task.pure)
 }
 
