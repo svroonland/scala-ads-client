@@ -12,7 +12,7 @@ This is a Scala-native reactive client for [Beckhoff TwinCAT PLC](http://www.bec
 * Easy reading and writing of custom data types (case classes) to PLC structs
 * Fully non-blocking async IO.
 
-Built on top of [monix](https://github.com/monix/monix), [monix-nio](https://github.com/monix/monix-nio) and [cats](https://github.com/typelevel/cats).
+Built on top of [monix](https://github.com/monix/monix) and [monix-nio](https://github.com/monix/monix-nio).
 
 # Documentation
 
@@ -67,7 +67,10 @@ Available codecs are named after the PLC datatype, in the `AdsCodecs` object:
 | `string`  | STRING(80)           | String             | 80 is the default string length     |
 | `stringN(maxLength)`  | STRING(maxLength)           | String | String of the given maximum length (maxLength + 1 bytes) |
 | `array[T](length, codecForT)` | ARRAY [1..length] OF T | List[T] |
-
+| date     | DATE          | LocalDate       | |
+| dateAndTime | DATE_AND_TIME          | LocalDateTime       | |
+| timeOfDay | TIME_OF_DAY          | LocalTime       | |
+| time | TIME          | FiniteDuration       | |
 
 ## Notifications
 The `AdsClient` can provide notifications for changes to a PLC variable as an `Observable`. This is the recommended way to repeatedly check a variable for changes without polling.
