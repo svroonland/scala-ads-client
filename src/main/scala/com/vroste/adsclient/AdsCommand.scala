@@ -1,30 +1,24 @@
 package com.vroste.adsclient
 
 import com.vroste.adsclient.AdsResponse.{AdsAddDeviceNotificationCommandResponse, AdsDeleteDeviceNotificationCommandResponse, AdsReadCommandResponse, AdsWriteReadCommandResponse}
-import scodec.{Attempt, Codec, Err}
+import scodec.{Attempt, Codec, Encoder, Err}
 import scodec.bits.ByteVector
 
 /**
   * Commands to the ADS server
   */
-sealed trait AdsCommand {
-  self =>
-  type ResponseType
-}
+sealed trait AdsCommand
 
 object AdsCommand {
 
   case class AdsReadCommand(indexGroup: Long, indexOffset: Long, readLength: Long) extends AdsCommand {
-    override type ResponseType = AdsReadCommandResponse
   }
 
   case class AdsWriteCommand(indexGroup: Long, indexOffset: Long, values: ByteVector) extends AdsCommand {
-    override type ResponseType = AdsWriteReadCommandResponse.type
   }
 
   case class AdsWriteReadCommand(indexGroup: Long, indexOffset: Long, readLength: Long, values: ByteVector)
     extends AdsCommand {
-    override type ResponseType = AdsWriteReadCommandResponse
   }
 
   case class AdsAddDeviceNotificationCommand(indexGroup: Long,
@@ -34,12 +28,16 @@ object AdsCommand {
                                              maxDelay: Long,
                                              cycleTime: Long)
     extends AdsCommand {
-    override type ResponseType = AdsAddDeviceNotificationCommandResponse
   }
 
   case class AdsDeleteDeviceNotificationCommand(notificationHandle: Long) extends AdsCommand {
-    override type ResponseType = AdsDeleteDeviceNotificationCommandResponse.type
   }
+
+  case class AdsSumReadCommand(commands: Seq[AdsReadCommand]) extends AdsCommand
+
+  case class AdsSumWriteCommand(commands: Seq[AdsWriteCommand]) extends AdsCommand
+
+  case class AdsSumWriteReadCommand(commands: Seq[AdsWriteReadCommand]) extends AdsCommand
 
   def commandId(c: AdsCommand): Short = c match {
     case AdsReadCommand(_, _, _) => 0x0002
@@ -77,7 +75,24 @@ object AdsCommand {
   implicit val deleteDeviceNotificationCommandCodec: Codec[AdsDeleteDeviceNotificationCommand] =
     uint32L.as[AdsDeleteDeviceNotificationCommand]
 
+  implicit val sumCommandCodec: Codec[AdsSumWriteReadCommand] = {
+    val encoder: Encoder[AdsSumWriteReadCommand] = AdsCommand.writeReadCommandCodec.asEncoder.econtramap[AdsSumWriteReadCommand] { sumCommand =>
+      for {
+        values <- Codec.encode(sumCommand.commands.toList)
+      } yield AdsWriteReadCommand(0xf080, sumCommand.commands.length, sumCommand.commands.map(_.readLength).sum, values.toByteVector)
+    }
+
+    val decoder = AdsCommand.writeReadCommandCodec.asDecoder.emap { writeReadCommand =>
+      Codec[List[AdsWriteReadCommand]].decodeValue(writeReadCommand.values.toBitVector)
+        .map(_.toSeq)
+        .map(AdsSumWriteReadCommand(_))
+    }
+
+    Codec(encoder, decoder)
+  }
+
   implicit val codec: Codec[AdsCommand] = (addDeviceNotificationCommandCodec :+: writeReadCommandCodec :+: writeCommandCodec :+: readCommandCodec :+: deleteDeviceNotificationCommandCodec).choice.as[AdsCommand]
+
 
   def codecForCommandId(commandId: Int): Codec[Either[AdsCommand, AdsResponse]] =
     codec.exmap(r => Attempt.successful(Left(r)), {

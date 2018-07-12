@@ -6,6 +6,7 @@ import monix.eval.Task
 import monix.execution.Scheduler
 import monix.reactive.{Consumer, Observable}
 import scodec.Codec
+import shapeless.HNil
 
 /**
   * A reactive (non-blocking) client for ADS servers
@@ -19,6 +20,7 @@ trait AdsClient {
   // TODO write control
   // TODO read many at once (sum)
   // TODO write many at once (sum)
+  def readMany[T](varName: String, codec: Codec[T]): ReadManyBuilder[T :: HNil]
 
   /**
     * Read a variable once

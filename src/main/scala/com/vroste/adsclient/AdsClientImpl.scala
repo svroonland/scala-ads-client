@@ -5,6 +5,7 @@ import monix.eval.Task
 import monix.reactive.{Consumer, Observable}
 import scodec.Codec
 import scodec.bits.BitVector
+import shapeless.HNil
 
 class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
   // For proper shutdown, we need to keep track of any cleanup commands that are pending and need the ADS client
@@ -147,4 +148,10 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
 //      _ <- Task.eval(println("Closing client"))
       _ <- client.close()
     } yield ()
+
+  override def readMany[T](varNameT: String, codecT: Codec[T]): ReadManyBuilder[T :: HNil] = new ReadManyBuilderImpl[T :: HNil] {
+    override def and[U](varName: String, codec: Codec[U]): ReadManyBuilder[U :: T :: HNil] = ???
+
+    override def read: Task[T :: HNil] = ???
+  }
 }

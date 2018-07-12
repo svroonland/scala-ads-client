@@ -96,7 +96,7 @@ case class AdsNotificationSampleWithTimestamp(handle: Long, timestamp: Instant, 
   /**
     * Run a command, await the response to the command and return it
     */
-  private def runCommand[R <: AdsResponse : ClassTag](command: AdsCommand): Task[R] = for {
+  private[adsclient] def runCommand[R <: AdsResponse : ClassTag](command: AdsCommand): Task[R] = for {
     invokeId <- generateInvokeId
     header = AmsHeader(
       amsNetIdTarget = settings.amsNetIdTarget,
@@ -184,6 +184,11 @@ case class AdsNotificationSampleWithTimestamp(handle: Long, timestamp: Instant, 
 object AdsCommandClient {
   def attemptToTask[T](attempt: Attempt[T]): Task[T] =
     attempt.fold(cause => Task.raiseError(AdsClientException(cause.messageWithContext)), Task.pure)
+
+  def attemptSeq[T](attempts: Seq[Attempt[T]]): Attempt[Seq[T]] =
+    attempts.foldLeft(Attempt.successful(Seq.emptyT])) {
+      case (as, a) => as.flatMap(s => a.map(s :+ _))
+    }
 }
 
 case class AdsClientException(message: String) extends Exception(message)
