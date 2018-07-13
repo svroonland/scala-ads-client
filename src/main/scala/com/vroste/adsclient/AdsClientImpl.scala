@@ -1,6 +1,6 @@
 package com.vroste.adsclient
 
-import com.vroste.adsclient.AdsCommandClient.attemptToTask
+import AttemptConversion._
 import monix.eval.Task
 import monix.reactive.{Consumer, Observable}
 import scodec.Codec
@@ -10,33 +10,23 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
   // For proper shutdown, we need to keep track of any cleanup commands that are pending and need the ADS client
   val resourcesToBeReleased: CountingSemaphore = new CountingSemaphore
 
-  override def read[T](varName: String, codec: Codec[T]): Task[T] = {
-    for {
-      varHandle <- client.getVariableHandle(varName)
-      _ <- resourcesToBeReleased.increment
-      data <- client
-        .readVariable(varHandle, codec.sizeBound.upperBound.getOrElse(codec.sizeBound.lowerBound) / 8)
-        .doOnFinish { _ =>
-          client.releaseVariableHandle(varHandle)
-        }
-      _ <- resourcesToBeReleased.decrement
-      decoded <- attemptToTask(codec.decode(BitVector(data)))
-    } yield decoded.value
-  }
+  override def read[T](varName: String, codec: Codec[T]): Task[T] =
+    withVariableHandle(varName)(read(_, codec))
 
-  override def write[T](varName: String, value: T, codec: Codec[T]): Task[Unit] = {
+  def read[T](handle: VariableHandle, codec: Codec[T]): Task[T] =
     for {
-      varHandle <- client.getVariableHandle(varName)
-      _ <- resourcesToBeReleased.increment
-      encoded <- attemptToTask(codec.encode(value))
-      _ <- client
-        .writeToVariable(varHandle, encoded.toByteVector)
-        .doOnFinish { _ =>
-          client.releaseVariableHandle(varHandle)
-        }
-      _ <- resourcesToBeReleased.decrement
-    } yield ()
-  }
+      size <- Task.pure(codec.sizeBound.upperBound.getOrElse(codec.sizeBound.lowerBound) / 8)
+      data <- client.readVariable(handle, size)
+      decoded <- codec.decode(BitVector(data)).toTask
+    } yield decoded.value
+
+  override def write[T](varName: String, value: T, codec: Codec[T]): Task[Unit] =
+    withVariableHandle(varName)(write(_, value, codec))
+
+  def write[T](handle: VariableHandle, value: T, codec: Codec[T]): Task[Unit] =
+    codec.encode(value).toTask
+      .map(_.toByteVector)
+      .flatMap(client.writeToVariable(handle, _))
 
   /**
     * Creates an observable that emits whenever an ADS notification is received
@@ -48,40 +38,33 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
     * @tparam T Type of the value
     * @return
     */
-  override def notificationsFor[T](varName: String, codec: Codec[T]): Observable[AdsNotification[T]] = {
-    // Ensures that created variable and notification handles are cleaned up
-    def usingNotificationHandle[U](f: NotificationHandle => Observable[U]): Observable[U] = {
-      Observable.fromTask {
-        for {
-          varHandle <- client.getVariableHandle(varName)
-                    _ <- resourcesToBeReleased.increment
-          readLength = codec.sizeBound.upperBound.getOrElse(codec.sizeBound.lowerBound) / 8
-          notificationHandle <- client.getNotificationHandle(varHandle, readLength, 0, 100) // TODO cycletime
-        } yield
-          f(notificationHandle)
-            .doOnTerminateTask(_ => {
-              (for {
-                _ <- client.deleteNotificationHandle(notificationHandle)
-                _ <- client.releaseVariableHandle(varHandle)
-                _ <- resourcesToBeReleased.decrement
-              } yield ()
-                ).forkAndForget // Important
-            })
-      }.flatten
-    }
-
-    usingNotificationHandle { handle =>
+  override def notificationsFor[T](varName: String, codec: Codec[T]): Observable[AdsNotification[T]] =
+    withNotificationHandle(varName, codec) { handle =>
       client.notificationSamples
         .filter(_.handle == handle.value)
         .flatMap { sample =>
-          Observable.fromTask {
-            for {
-              decodeResult <- attemptToTask(codec.decode(BitVector(sample.data)))
-            } yield AdsNotification(decodeResult.value, sample.timestamp)
-          }
+          codec.decode(BitVector(sample.data)).toObservable
+            .map(decodeResult => AdsNotification(decodeResult.value, sample.timestamp))
         }
     }
-  }
+
+  /**
+    * Takes a function producing an observable for some notification handle and produces an observable that
+    * when subscribed creates a notification handle and when unsubscribed deletes the notification handle
+    */
+  def withNotificationHandle[U](varName: String, codec: Codec[_])(f: NotificationHandle => Observable[U]): Observable[U] =
+    Observable.fromTask {
+      val readLength = codec.sizeBound.upperBound.getOrElse(codec.sizeBound.lowerBound) / 8
+
+      withVariableHandle(varName) { varHandle =>
+        for {
+          notificationHandle <- client.getNotificationHandle(varHandle, readLength, 0, 100) // TODO cycletime
+        } yield
+          f(notificationHandle).doOnTerminateTask(_ => {
+            client.deleteNotificationHandle(notificationHandle).forkAndForget // Important! To allow downstream to cancel the Observable
+          })
+      }
+    }.flatten
 
   /**
     * Creates a consumer that writes elements to a PLC variable
@@ -105,11 +88,11 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
       _ <- resourcesToBeReleased.decrement
     } yield ()
 
-    consumerBracket[T, VariableHandle](before, after) {
+    ConsumerUtil.bracket[T, VariableHandle](before, after) {
       Consumer.foreachTask {
         case (handle, value) =>
           for {
-            encoded <- attemptToTask(codec.encode(value))
+            encoded <- codec.encode(value).toTask
             _ <- client.writeToVariable(handle, encoded.toByteVector)
           } yield ()
       }
@@ -117,34 +100,29 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
   }
 
   /**
-    * Creates a consumer that creates a resource before handling the first element and cleans it up after
-    * handling the last element
+    * Creates a task that produces a T based on a function that takes a variable handle
     *
-    * @param acquire Create a resource asychronously
-    * @param release Cleanup the resource after the last
-    * @param inner   Consumer for tuples of the resource and a value
-    * @tparam T Type of elements to consume
-    * @tparam R Type of the resource
-    * @return A consumer of elements of type T, when executed will result in a value of type Unit
+    * The handle is created before the task is executed and released just before the task completes
     */
-  def consumerBracket[T, R](acquire: Task[R], release: R => Task[Unit])(
-    inner: Consumer[(R, T), Unit]): Consumer[T, Unit] = {
-    val resourceT = acquire.memoize
+  private def withVariableHandle[T](varName: String)(block: VariableHandle => Task[T]): Task[T] = {
+    val acquire = client.getVariableHandle(varName)
+    val release = client.releaseVariableHandle _
 
-    inner
-      .transformInput[T] {
-      _.mapTask(t => resourceT.map((_, t)))
-    }
-      .mapTask { _ =>
-        resourceT.flatMap(release)
-      }
+    acquire.bracket(varHandle => withResource(block(varHandle)))(release)
   }
 
+  private def withResource[T](t: Task[T]): Task[T] =
+    resourcesToBeReleased.increment.bracket(_ => t)(_ => resourcesToBeReleased.decrement)
+
+  /**
+    * Closes the socket connection after waiting for any acquired resources to be released
+    * @return
+    */
   override def close(): Task[Unit] =
     for {
-//      _ <- Task.eval(println("Waiting for outstanding resources to close before closing"))
+      //      _ <- Task.eval(println("Waiting for outstanding resources to close before closing"))
       _ <- resourcesToBeReleased.awaitZero
-//      _ <- Task.eval(println("Closing client"))
+      //      _ <- Task.eval(println("Closing client"))
       _ <- client.close()
     } yield ()
 }

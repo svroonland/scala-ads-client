@@ -1,31 +1,21 @@
 package com.vroste.adsclient
 
-import com.vroste.adsclient.AdsResponse.{AdsAddDeviceNotificationCommandResponse, AdsDeleteDeviceNotificationCommandResponse, AdsReadCommandResponse, AdsWriteReadCommandResponse}
-import scodec.{Attempt, Codec, Err}
 import scodec.bits.ByteVector
+import scodec.{Attempt, Codec, Err}
 
 /**
   * Commands to the ADS server
   */
-sealed trait AdsCommand {
-  self =>
-  type ResponseType
-}
+sealed trait AdsCommand
 
 object AdsCommand {
 
-  case class AdsReadCommand(indexGroup: Long, indexOffset: Long, readLength: Long) extends AdsCommand {
-    override type ResponseType = AdsReadCommandResponse
-  }
+  case class AdsReadCommand(indexGroup: Long, indexOffset: Long, readLength: Long) extends AdsCommand
 
-  case class AdsWriteCommand(indexGroup: Long, indexOffset: Long, values: ByteVector) extends AdsCommand {
-    override type ResponseType = AdsWriteReadCommandResponse.type
-  }
+  case class AdsWriteCommand(indexGroup: Long, indexOffset: Long, values: ByteVector) extends AdsCommand
 
   case class AdsWriteReadCommand(indexGroup: Long, indexOffset: Long, readLength: Long, values: ByteVector)
-    extends AdsCommand {
-    override type ResponseType = AdsWriteReadCommandResponse
-  }
+    extends AdsCommand
 
   case class AdsAddDeviceNotificationCommand(indexGroup: Long,
                                              indexOffset: Long,
@@ -33,13 +23,9 @@ object AdsCommand {
                                              transmissionMode: AdsTransmissionMode,
                                              maxDelay: Long,
                                              cycleTime: Long)
-    extends AdsCommand {
-    override type ResponseType = AdsAddDeviceNotificationCommandResponse
-  }
+    extends AdsCommand
 
-  case class AdsDeleteDeviceNotificationCommand(notificationHandle: Long) extends AdsCommand {
-    override type ResponseType = AdsDeleteDeviceNotificationCommandResponse.type
-  }
+  case class AdsDeleteDeviceNotificationCommand(notificationHandle: Long) extends AdsCommand
 
   def commandId(c: AdsCommand): Short = c match {
     case AdsReadCommand(_, _, _) => 0x0002
