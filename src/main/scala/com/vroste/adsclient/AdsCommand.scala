@@ -1,8 +1,7 @@
 package com.vroste.adsclient
 
-import com.vroste.adsclient.AdsResponse.{AdsAddDeviceNotificationCommandResponse, AdsDeleteDeviceNotificationCommandResponse, AdsReadCommandResponse, AdsWriteReadCommandResponse}
-import scodec.{Attempt, Codec, Encoder, Err}
 import scodec.bits.ByteVector
+import scodec.{Attempt, Codec, Encoder, Err}
 
 /**
   * Commands to the ADS server
@@ -11,15 +10,12 @@ sealed trait AdsCommand
 
 object AdsCommand {
 
-  case class AdsReadCommand(indexGroup: Long, indexOffset: Long, readLength: Long) extends AdsCommand {
-  }
+  case class AdsReadCommand(indexGroup: Long, indexOffset: Long, readLength: Long) extends AdsCommand
 
-  case class AdsWriteCommand(indexGroup: Long, indexOffset: Long, values: ByteVector) extends AdsCommand {
-  }
+  case class AdsWriteCommand(indexGroup: Long, indexOffset: Long, values: ByteVector) extends AdsCommand
 
   case class AdsWriteReadCommand(indexGroup: Long, indexOffset: Long, readLength: Long, values: ByteVector)
-    extends AdsCommand {
-  }
+    extends AdsCommand
 
   case class AdsAddDeviceNotificationCommand(indexGroup: Long,
                                              indexOffset: Long,
@@ -27,11 +23,9 @@ object AdsCommand {
                                              transmissionMode: AdsTransmissionMode,
                                              maxDelay: Long,
                                              cycleTime: Long)
-    extends AdsCommand {
-  }
+    extends AdsCommand
 
-  case class AdsDeleteDeviceNotificationCommand(notificationHandle: Long) extends AdsCommand {
-  }
+  case class AdsDeleteDeviceNotificationCommand(notificationHandle: Long) extends AdsCommand
 
   case class AdsSumReadCommand(commands: Seq[AdsReadCommand]) extends AdsCommand
 
