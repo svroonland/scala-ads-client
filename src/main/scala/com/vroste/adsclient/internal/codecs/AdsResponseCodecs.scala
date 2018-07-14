@@ -1,8 +1,5 @@
 package com.vroste.adsclient.internal.codecs
 
-import java.time.temporal.ChronoUnit
-import java.time.{Duration, Instant}
-
 import com.vroste.adsclient.internal._
 import scodec.codecs.{StringEnrichedWithCodecContextSupport, bytes, listOfN, uint32L, variableSizeBytesLong}
 import scodec.{Attempt, Codec, Err}

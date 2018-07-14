@@ -35,6 +35,5 @@ object AdsResponse {
   }
 }
 
-
 case class AdsStampHeader(timestamp: Instant, samples: List[AdsNotificationSample])
 case class AdsNotificationSample(handle: Long, data: ByteVector)

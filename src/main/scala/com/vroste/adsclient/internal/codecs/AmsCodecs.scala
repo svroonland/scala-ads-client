@@ -23,26 +23,26 @@ trait AmsCodecs {
   }
 
   implicit val amsHeaderCodec: Codec[AmsHeader] = {
-    val commandAndOtherStuffCodec = (("commandId" | uint16L) ~ ("stateFlags" | uint16L)).flatZip { case (commandId, stateFlags) =>
-      val commandOrResponseCodec: Codec[Either[AdsCommand, AdsResponse]] =
-        stateFlags match {
-          case 0x0005 =>
-            // Response
-            AdsResponseCodecs.codecForCommandId(commandId)
-          case 0x0004 if commandId == 8 => // ADS notification
-            AdsResponseCodecs.codecForCommandId(commandId)
-          case 0x0004 =>
-            // Request
-            AdsCommandCodecs.codecForCommandId(commandId)
-        }
+    val commandAndOtherStuffCodec = (("commandId" | uint16L) ~ ("stateFlags" | uint16L))
+      .flatZip { case (commandId, stateFlags) =>
+        val commandOrResponseCodec: Codec[Either[AdsCommand, AdsResponse]] =
+          stateFlags match {
+            case 0x0005 =>
+              // Response
+              AdsResponseCodecs.codecForCommandId(commandId)
+            case 0x0004 if commandId == 8 => // ADS notification
+              AdsResponseCodecs.codecForCommandId(commandId)
+            case 0x0004 =>
+              // Request
+              AdsCommandCodecs.codecForCommandId(commandId)
+          }
 
-      variableSizePrefixedBytesLong(
-        size = "dataLength" | uint32L,
-        prefix = ("errorCode" | uint32L) ~ ("invokeId" | uint32),
-        value = commandOrResponseCodec
-      )
-    }.flattenLeftPairs
-
+        variableSizePrefixedBytesLong(
+          size = "dataLength" | uint32L,
+          prefix = ("errorCode" | uint32L) ~ ("invokeId" | uint32),
+          value = commandOrResponseCodec
+        )
+      }.flattenLeftPairs
 
     (("netId" | Codec[AmsNetId]) ~
       ("targetPort" | uint16L) ~

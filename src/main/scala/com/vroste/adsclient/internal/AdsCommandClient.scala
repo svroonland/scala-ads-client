@@ -134,6 +134,9 @@ class AdsCommandClient(settings: AdsConnectionSettings, socketClient: AsyncSocke
       Task.unit
     }
 
+  def checkErrorCodes(errorCodes: Seq[Long]): Task[Unit] =
+    Task.traverse(errorCodes)(checkErrorCode).map(_ => ())
+
   def checkResponse(r: AdsResponse): Task[Unit] = checkErrorCode(r.errorCode)
 
   private val lastInvokeId: AtomicInteger = new AtomicInteger(1)

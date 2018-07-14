@@ -15,7 +15,7 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
 
   import AdsClientImpl._
   import AdsCommandClient._
-  import com.vroste.adsclient.internal.AdsResponse._
+  import AdsResponse._
 
   // For proper shutdown, we need to keep track of any cleanup commands that are pending and need the ADS client
   val resourcesToBeReleased: CountingSemaphore = new CountingSemaphore
@@ -39,7 +39,7 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
       adsCommand <- sumCommand.toAdsCommand.toTask
       response <- client.runCommand[AdsWriteReadCommandResponse](adsCommand)
       errorCodesAndValue <- sumReadResponseDecoder(command.codec, command.variables.size).decodeValue(response.data.toBitVector).toTask
-      _ <- Task.traverse(errorCodesAndValue._1)(client.checkErrorCode)
+      _ <- client.checkErrorCodes(errorCodesAndValue._1)
     } yield errorCodesAndValue._2
 
   override def write[T](varName: String, value: T, codec: Codec[T]): Task[Unit] =
@@ -59,7 +59,7 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
       adsCommand <- sumCommand.toAdsCommand.toTask
       response <- client.runCommand[AdsWriteReadCommandResponse](adsCommand)
       errorCodes <- sumWriteResponseDecoder.decodeValue(response.data.toBitVector).toTask
-      _ <- Task.traverse(errorCodes)(client.checkErrorCode)
+      _ <- client.checkErrorCodes(errorCodes)
     } yield ()
 
   /**
@@ -181,7 +181,7 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
       response <- client.runCommand[AdsWriteReadCommandResponse](adsCommand)
       errorCodesAndHandles <- sumWriteReadResponseDecoder[VariableHandle](command.variables.size).decodeValue(response.data.toBitVector).toTask
       errorCodes = errorCodesAndHandles.map(_._1)
-      _ <- Task.traverse(errorCodes)(client.checkErrorCode)
+      _ <- client.checkErrorCodes(errorCodes)
     } yield errorCodesAndHandles.map(_._2)
 
   def releaseHandles(handles: Seq[VariableHandle]): Task[Unit] =
@@ -195,14 +195,21 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
 }
 
 object AdsClientImpl extends AdsSumCommandResponseCodecs {
+
+  import scodec.codecs.{listOfN, provide}
+
   def sumWriteReadResponseDecoder[T](nrValues: Int)(implicit decoderT: Decoder[T]): Decoder[Seq[(Long, T)]] =
     adsSumWriteReadCommandResponseDecoder(nrValues)
-      .emap(_.responses.map { r =>
-        decoderT.decodeValue(r.data.toBitVector).map((r.errorCode, _))
-      }.sequence)
+      .emap { response =>
+        val responseDecoders = response.responses.map { r =>
+          val decodedData = decoderT.decodeValue(r.data.toBitVector)
+          decodedData.map((r.errorCode, _))
+        }
+
+        responseDecoders.sequence
+      }
 
   def sumReadResponseDecoder[T](codec: Codec[T], nrValues: Int): Decoder[(List[Long], T)] = {
-    import scodec.codecs.{listOfN, provide}
     val errorCodesCodec = listOfN(provide(nrValues), AdsResponseCodecs.errorCodeCodec)
 
     (errorCodesCodec ~ codec).asDecoder

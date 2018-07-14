@@ -28,7 +28,7 @@ trait AdsSumCommandResponseCodecs extends AdsResponseCodecs {
 
         val valueCodecs = lengths.map(bytes)
 
-        valueCodecs.sequence.map(values => errorCodes.zip(values))
+        valueCodecs.sequence.map(errorCodes zip _)
       }
 
     errorsAndValuesCodec
@@ -36,7 +36,11 @@ trait AdsSumCommandResponseCodecs extends AdsResponseCodecs {
       .map(AdsSumWriteReadCommandResponse)
   }
 
-  // Result consists of a list of error codes
+  /**
+    * The payload of the response of an ADS Sum Write command is a list of error codes
+    *
+    * We can easily compose it from the single ADS write command response codec
+    */
   implicit val adsSumWriteCommandResponseCodec: Codec[AdsSumWriteCommandResponse] =
     list(adsWriteCommandResponseCodec).xmap(AdsSumWriteCommandResponse, _.responses)
 }
