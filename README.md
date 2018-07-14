@@ -3,13 +3,14 @@ Beckhoff TwinCAT ADS client for the Scala language
 
 # About
 
-This is a Scala-native reactive client for [Beckhoff TwinCAT PLC](http://www.beckhoff.com/TwinCAT/). 
+This is a Scala-idiomatic reactive client for [Beckhoff TwinCAT PLC](http://www.beckhoff.com/TwinCAT/). 
 
 ## Features
 * Get a continuous stream of notifications for PLC variables as Monix [Observable](https://monix.io/docs/3x/reactive/observable.html)s. 
 * Compose and transform Observables to achieve more complex behavior. 
 * Streaming of elements in an Observable to PLC variables
 * Easy reading and writing of custom data types (case classes) to PLC structs
+* Efficient and typesafe reading and writing of many variables at once using ADS SUM commands
 * Fully non-blocking async IO.
 
 Built on top of [monix](https://github.com/monix/monix) and [monix-nio](https://github.com/monix/monix-nio).
@@ -41,12 +42,25 @@ clientT.runOnComplete {
 ## Reading
 To read a PLC variable once:
 ```scala
-val client: AdsClient
+val client: AdsClient = AdsClient.connect(...)
 val result: Task[Int] = client.read("MAIN.myIntegerVar", int)
 ```
 
+This will create a variable handle, read using the handle and release the handle.
+
+### Reading many variables at once
+To read many variables efficiently and atomically, first create a list of the variable names and their respective codecs and then call the `read()` method.
+
+```scala
+val variables = VariableList("MAIN.var1", int) + ("MAIN.var2", bool)
+val result: Task[Int :: Bool :: HNil] = client.read(variables)
+
+```
+
+The result will be a shapeless `HList`, which you can convert to a tuple using `result.tupled` or to a case class using `Generic[MyCaseClass].from(hlistResult)`.
+
 ## Codecs
-The second parameter to `read()` in the example above is the codec which translates between the PLC datatype and the scala datatype. Because Scala does not have a one to one mapping for all PLC datatypes, the codec has to be provided explicitly. Codecs for unsigned integer types will map PLC values to the `>=0` range of the appropriate Scala data type.
+The `int` parameter to `read()` in the example above is the codec which translates between the PLC datatype and the scala datatype. Because Scala does not have a 1-to-1 corresponding type for all PLC datatypes, the codec has to be provided explicitly. Codecs for unsigned integer types will map PLC values to the `>=0` range of the appropriate Scala data type.
 
 Available codecs are named after the PLC datatype, in the `AdsCodecs` object:
 
@@ -67,10 +81,10 @@ Available codecs are named after the PLC datatype, in the `AdsCodecs` object:
 | `string`  | STRING(80)           | String             | 80 is the default string length     |
 | `stringN(maxLength)`  | STRING(maxLength)           | String | String of the given maximum length (maxLength + 1 bytes) |
 | `array[T](length, codecForT)` | ARRAY [1..length] OF T | List[T] |
-| date     | DATE          | LocalDate       | |
-| dateAndTime | DATE_AND_TIME          | LocalDateTime       | |
-| timeOfDay | TIME_OF_DAY          | LocalTime       | |
-| time | TIME          | FiniteDuration       | |
+| `date`     | DATE          | LocalDate       | |
+| `dateAndTime` | DATE_AND_TIME          | LocalDateTime       | |
+| `timeOfDay` | TIME_OF_DAY          | LocalTime       | |
+| `time` | TIME          | FiniteDuration       | |
 
 ## Notifications
 The `AdsClient` can provide notifications for changes to a PLC variable as an `Observable`. This is the recommended way to repeatedly check a variable for changes without polling.
@@ -92,7 +106,7 @@ The ADS client provides a method for writing to a PLC variable once. This method
 val writeComplete: Task[Unit] = client.write("MAIN.myUnsignedIntegerVar", uint)
 ```
 
-## Writing an Observable
+### Writing an Observable
 When you have an `Observable` of values and you want to write (stream) it to a PLC variable for each emitted value, use the following:
 ```scala
 val strings = Observable.interval(15.seconds)
@@ -104,6 +118,16 @@ val consumer = client.consumerFor("MAIN.myStringVar", string)
 val done: Task[Unit] = strings.consumeWith(consumer)
 ```
 
+### Writing many variables at once
+To write many variables at once efficiently, create a list of the variables and their respective codecs first. Then construct the value as an `HList` (or convert from a case class or tuple).
+
+```scala
+val variableList = VariableList("MAIN.var1", int) + ("MAIN.var2", string) + ("MAIN.var4", int) + ("MAIN.var5", bool)
+
+val values = 3 :: "Dummy" :: 42 :: true
+client.write(variableList, values)
+
+```
 ## Custom datatypes
 Codecs can be composed together to map to custom data types such as your own value classes or case classes
 

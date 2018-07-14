@@ -2,11 +2,12 @@ package com.vroste.adsclient
 
 import java.time.Instant
 
+import com.vroste.adsclient.codec.AdsCodecs
 import monix.eval.Task
 import monix.execution.Scheduler
 import monix.reactive.{Consumer, Observable}
 import scodec.Codec
-import shapeless.HNil
+import shapeless.HList
 
 /**
   * A reactive (non-blocking) client for ADS servers
@@ -18,12 +19,13 @@ import shapeless.HNil
 trait AdsClient {
   // TODO read state, state notifications
   // TODO write control
-  // TODO read many at once (sum)
-  // TODO write many at once (sum)
-  def readMany[T](varName: String, codec: Codec[T]): ReadManyBuilder[T :: HNil]
+
+  // TODO the methods taking handles are useless if we don't offer create and release handles methods
 
   /**
     * Read a variable once
+    *
+    * Creates a handle to the variable, reads using the handle and releases the handle
     *
     * @param varName PLC variable name
     * @param codec   Codec for the variable type
@@ -31,6 +33,31 @@ trait AdsClient {
     * @return
     */
   def read[T](varName: String, codec: Codec[T]): Task[T]
+
+  /**
+    * Read a variable using an existing handle
+    */
+  def read[T](handle: VariableHandle, codec: Codec[T]): Task[T]
+
+  /**
+    * Read a list of variables once
+    *
+    * Creates the variable handles, reads the variables and releases the handles
+    *
+    * Uses ADS Sum commands to perform these as three operations efficiently
+    *
+    * @param variables [[VariableList]] describing the variable names and their codecs
+    * @tparam T Type of [[HList]] of the values
+    * @return HList of the read values
+    */
+  def read[T <: HList](variables: VariableList[T]): Task[T]
+
+  /**
+    * Read a list of variables given a list of existing variable handles
+    *
+    * Uses ADS Sum commands to perform this operation efficiently
+    */
+  def read[T <: HList](variables: VariableList[T], handles: Seq[VariableHandle]): Task[T]
 
   /**
     * Write to a variable once
@@ -41,6 +68,31 @@ trait AdsClient {
     * @return
     */
   def write[T](varName: String, value: T, codec: Codec[T]): Task[Unit]
+
+  /**
+    * Write to a variable given an existing handle
+    */
+  def write[T](handle: VariableHandle, value: T, codec: Codec[T]): Task[Unit]
+
+  /**
+    * Write to a list of variables once
+    *
+    * Creates handles for the variables, writes the values and releases the handles
+    *
+    * Uses ADS Sum commands to perform these three operations efficiently
+    */
+  def write[T <: HList](variables: VariableList[T], value: T): Task[Unit]
+
+  /**
+    * Writes to a list of variables given existing handles
+    *
+    * @param variables
+    * @param handles
+    * @param value
+    * @tparam T
+    * @return
+    */
+  def write[T <: HList](variables: VariableList[T], handles: Seq[VariableHandle], value: T): Task[Unit]
 
   /**
     * Creates an observable that emits an element whenever the underlying PLC variable's value changes
@@ -61,6 +113,17 @@ trait AdsClient {
     * @return
     */
   def consumerFor[T](varName: String, codec: Codec[T]): Consumer[T, Unit]
+
+  /**
+    * Creates a consumer that writes to many PLC variables at once
+    *
+    * Uses ADS sum commands
+    *
+    * @param variables
+    * @param codec
+    * @tparam T
+    */
+  def consumerFor[T <: HList](variables: VariableList[T], codec: Codec[T]): Consumer[T, Unit]
 
   /**
     * Closes the underlying connection to the ADS server
@@ -111,5 +174,9 @@ object AdsTransmissionMode {
 }
 
 case class VariableHandle(value: Long) extends AnyVal
+
+object VariableHandle {
+  implicit val codec: Codec[VariableHandle] = AdsCodecs.udint.xmap(VariableHandle.apply, _.value)
+}
 
 case class NotificationHandle(value: Long) extends AnyVal

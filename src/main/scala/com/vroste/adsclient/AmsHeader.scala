@@ -23,12 +23,12 @@ object AmsHeader {
       stateFlags match {
         case 0x0005 =>
           // Response
-          AdsResponse.codecForCommandId(commandId)
+          AdsResponseCodecs.codecForCommandId(commandId)
         case 0x0004 if commandId == 8 => // ADS notification
-          AdsResponse.codecForCommandId(commandId)
+          AdsResponseCodecs.codecForCommandId(commandId)
         case 0x0004 =>
           // Request
-          AdsCommand.codecForCommandId(commandId)
+          AdsCommandCodecs.codecForCommandId(commandId)
       }
 
     variableSizePrefixedBytesLong(

@@ -1,33 +1,61 @@
 package com.vroste.adsclient
 
-import AttemptConversion._
+import com.vroste.adsclient.AttemptUtil._
+import com.vroste.adsclient.SumCommandResponses.{AdsSumWriteCommandResponse, AdsSumWriteReadCommandResponse}
 import monix.eval.Task
 import monix.reactive.{Consumer, Observable}
-import scodec.Codec
 import scodec.bits.BitVector
-import shapeless.HNil
+import scodec.{Codec, Decoder}
+import shapeless.HList
 
 class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
+
+  import AdsCommandClient._
+  import AdsResponse._
+  import AdsClientImpl._
+
   // For proper shutdown, we need to keep track of any cleanup commands that are pending and need the ADS client
   val resourcesToBeReleased: CountingSemaphore = new CountingSemaphore
 
   override def read[T](varName: String, codec: Codec[T]): Task[T] =
     withVariableHandle(varName)(read(_, codec))
 
-  def read[T](handle: VariableHandle, codec: Codec[T]): Task[T] =
+  override def read[T](handle: VariableHandle, codec: Codec[T]): Task[T] =
     for {
       size <- Task.pure(codec.sizeBound.upperBound.getOrElse(codec.sizeBound.lowerBound) / 8)
       data <- client.readVariable(handle, size)
       decoded <- codec.decode(BitVector(data)).toTask
     } yield decoded.value
 
+  override def read[T <: HList](command: VariableList[T]): Task[T] =
+    createHandles(command).bracket(read(command, _))(releaseHandles)
+
+  override def read[T <: HList](command: VariableList[T], handles: Seq[VariableHandle]): Task[T] =
+    for {
+      sumCommand <- readVariablesCommand(handles.zip(command.sizes)).toTask
+      adsCommand <- sumCommand.toAdsCommand.toTask
+      response <- client.runCommand[AdsWriteReadCommandResponse](adsCommand)
+      value <- sumReadResponseDecoder(command.codec, command.variables.size).decodeValue(response.data.toBitVector).toTask
+    } yield value
+
   override def write[T](varName: String, value: T, codec: Codec[T]): Task[Unit] =
     withVariableHandle(varName)(write(_, value, codec))
 
-  def write[T](handle: VariableHandle, value: T, codec: Codec[T]): Task[Unit] =
+  override def write[T](handle: VariableHandle, value: T, codec: Codec[T]): Task[Unit] =
     codec.encode(value).toTask
       .map(_.toByteVector)
       .flatMap(client.writeToVariable(handle, _))
+
+  override def write[T <: HList](command: VariableList[T], values: T): Task[Unit] =
+    createHandles(command).bracket(write(command, _, values))(releaseHandles)
+
+  override def write[T <: HList](command: VariableList[T], handles: Seq[VariableHandle], values: T): Task[Unit] =
+    for {
+      sumCommand <- writeVariablesCommand(handles.zip(command.sizes), command.codec, values).toTask
+      adsCommand <- sumCommand.toAdsCommand.toTask
+      response <- client.runCommand[AdsWriteReadCommandResponse](adsCommand)
+      _ <- sumWriteResponseDecoder.decodeValue(response.data.toBitVector).toTask
+    } yield ()
 
   /**
     * Creates an observable that emits whenever an ADS notification is received
@@ -90,13 +118,23 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
     } yield ()
 
     ConsumerUtil.bracket[T, VariableHandle](before, after) {
-      Consumer.foreachTask {
-        case (handle, value) =>
-          for {
-            encoded <- codec.encode(value).toTask
-            _ <- client.writeToVariable(handle, encoded.toByteVector)
-          } yield ()
-      }
+      Consumer.foreachTask { case (handle, value) => write(handle, value, codec) }
+    }
+  }
+
+  override def consumerFor[T <: HList](variables: VariableList[T], codec: Codec[T]): Consumer[T, Unit] = {
+    def before = for {
+      handle <- createHandles(variables)
+      _ <- resourcesToBeReleased.increment
+    } yield handle
+
+    def after(handles: Seq[VariableHandle]) = for {
+      _ <- releaseHandles(handles)
+      _ <- resourcesToBeReleased.decrement
+    } yield ()
+
+    ConsumerUtil.bracket[T, Seq[VariableHandle]](before, after) {
+      Consumer.foreachTask { case (handles, values) => write(variables, handles, values) }
     }
   }
 
@@ -117,6 +155,7 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
 
   /**
     * Closes the socket connection after waiting for any acquired resources to be released
+    *
     * @return
     */
   override def close(): Task[Unit] =
@@ -127,9 +166,41 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
       _ <- client.close()
     } yield ()
 
-  override def readMany[T](varNameT: String, codecT: Codec[T]): ReadManyBuilder[T :: HNil] = new ReadManyBuilderImpl[T :: HNil] {
-    override def and[U](varName: String, codec: Codec[U]): ReadManyBuilder[U :: T :: HNil] = ???
 
-    override def read: Task[T :: HNil] = ???
+  // TODO should  these be moved to the client?
+
+  def createHandles[T <: HList](command: VariableList[T]): Task[Seq[VariableHandle]] =
+    for {
+      sumCommand <- createVariableHandlesCommand(command.variables).toTask
+      adsCommand <- sumCommand.toAdsCommand.toTask
+      response <- client.runCommand[AdsWriteReadCommandResponse](adsCommand)
+      handles <- sumWriteReadResponseDecoder[VariableHandle].decodeValue(response.data.toBitVector).toTask
+    } yield handles
+
+  def releaseHandles(handles: Seq[VariableHandle]): Task[Unit] =
+    for {
+      sumCommand <- releaseHandlesCommand(handles).toTask
+      adsCommand <- sumCommand.toAdsCommand.toTask
+      response <- client.runCommand[AdsWriteReadCommandResponse](adsCommand)
+      _ <- sumWriteResponseDecoder.decodeValue(response.data.toBitVector).toTask
+    } yield ()
+
+}
+
+object AdsClientImpl extends SumCommandResponseCodecs {
+  def sumWriteReadResponseDecoder[T](implicit decoderT: Decoder[T]): Decoder[Seq[T]] =
+  // TODO Check error codes
+    Decoder[AdsSumWriteReadCommandResponse].emap(_.responses.map(_.data.toBitVector).map(decoderT.decodeValue).sequence)
+
+  def sumReadResponseDecoder[T](codec: Codec[T], nrValues: Int): Decoder[T] = {
+    import scodec.codecs.{listOfN, provide}
+    val errorCodesCodec = listOfN(provide(nrValues), AdsResponseCodecs.errorCodeCodec)
+
+    // TODO Check error codes
+    (errorCodesCodec ~ codec).asDecoder.map(_._2)
   }
+
+  def sumWriteResponseDecoder: Decoder[Unit] =
+  // TODO Check error codes
+    Decoder[AdsSumWriteCommandResponse].map(_ => ())
 }
