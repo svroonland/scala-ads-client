@@ -1,6 +1,6 @@
 package com.vroste.adsclient
 
-import com.vroste.adsclient.codec.AdsCodecs._
+import AdsCodecs._
 import monix.execution.Scheduler.Implicits.global
 import monix.reactive.Consumer
 import org.scalatest.{AsyncFlatSpec, MustMatchers}

@@ -1,5 +1,6 @@
-package com.vroste.adsclient
+package com.vroste.adsclient.internal.codecs
 
+import com.vroste.adsclient.internal.AdsSumCommand
 import scodec.Codec
 
 trait AdsSumCommandCodecs {

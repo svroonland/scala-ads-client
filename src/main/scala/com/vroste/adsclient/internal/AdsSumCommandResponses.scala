@@ -1,6 +1,6 @@
-package com.vroste.adsclient
+package com.vroste.adsclient.internal
 
-object SumCommandResponses {
+object AdsSumCommandResponses {
 
   import AdsResponse._
 

@@ -2,7 +2,7 @@ package com.vroste.adsclient
 
 import java.time.Instant
 
-import com.vroste.adsclient.codec.AdsCodecs
+import com.vroste.adsclient.internal.{AdsClientImpl, AdsCommandClient}
 import monix.eval.Task
 import monix.execution.Scheduler
 import monix.reactive.{Consumer, Observable}

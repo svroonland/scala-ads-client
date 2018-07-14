@@ -2,7 +2,8 @@ package com.vroste.adsclient
 
 import java.time.{LocalDate, LocalDateTime, LocalTime}
 
-import com.vroste.adsclient.codec.AdsCodecs._
+import AdsCodecs._
+import com.vroste.adsclient.internal.AdsClientException
 import monix.execution.Scheduler.Implicits.global
 import monix.reactive.Consumer
 import org.scalatest.{AsyncFlatSpec, MustMatchers}

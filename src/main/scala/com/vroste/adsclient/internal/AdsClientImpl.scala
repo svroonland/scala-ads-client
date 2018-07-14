@@ -1,7 +1,10 @@
-package com.vroste.adsclient
+package com.vroste.adsclient.internal
 
-import com.vroste.adsclient.AttemptUtil._
-import com.vroste.adsclient.SumCommandResponses.{AdsSumWriteCommandResponse, AdsSumWriteReadCommandResponse}
+import com.vroste.adsclient._
+import com.vroste.adsclient.internal.util.AttemptUtil._
+import com.vroste.adsclient.internal.AdsSumCommandResponses.{AdsSumWriteCommandResponse, AdsSumWriteReadCommandResponse}
+import com.vroste.adsclient.internal.codecs.{AdsResponseCodecs, AdsSumCommandResponseCodecs}
+import com.vroste.adsclient.internal.util.ConsumerUtil
 import monix.eval.Task
 import monix.reactive.{Consumer, Observable}
 import scodec.bits.BitVector
@@ -10,9 +13,9 @@ import shapeless.HList
 
 class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
 
-  import AdsCommandClient._
-  import AdsResponse._
   import AdsClientImpl._
+  import AdsCommandClient._
+  import com.vroste.adsclient.internal.AdsResponse._
 
   // For proper shutdown, we need to keep track of any cleanup commands that are pending and need the ADS client
   val resourcesToBeReleased: CountingSemaphore = new CountingSemaphore
@@ -187,7 +190,7 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
 
 }
 
-object AdsClientImpl extends SumCommandResponseCodecs {
+object AdsClientImpl extends AdsSumCommandResponseCodecs {
   def sumWriteReadResponseDecoder[T](implicit decoderT: Decoder[T]): Decoder[Seq[T]] =
   // TODO Check error codes
     Decoder[AdsSumWriteReadCommandResponse].emap(_.responses.map(_.data.toBitVector).map(decoderT.decodeValue).sequence)

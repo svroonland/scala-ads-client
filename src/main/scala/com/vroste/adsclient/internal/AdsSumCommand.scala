@@ -1,17 +1,19 @@
-package com.vroste.adsclient
+package com.vroste.adsclient.internal
 
+import com.vroste.adsclient.internal.codecs.AdsSumCommandCodecs
 import scodec.bits.ByteVector
 import scodec.{Attempt, Codec}
+import scodec.codecs._
 
+import AdsCommand._
+
+// SUM COMMANDS
+// Sum commands are basically a list of commands of a type (read, write or write+read).
+// They are encoded as write-read commands with a special encoding of the list of sub commands
+// We encode them as a list of regular ADS commands with a method to convert them to the WriteReadCommand
+// for better composability
 object AdsSumCommand extends AdsSumCommandCodecs {
 
-  import AdsCommand._
-  import scodec.codecs._
-
-  // SUM COMMANDS
-  // Sum commands are basically a list of commands of a type (read, write or write+read).
-  // They are encoded as read/write commands with a special encoding of the list of sub commands
-  // We encode them as a list of regular ADS commands with a method to convert them to the WriteReadCommand
   case class AdsSumReadCommand(commands: Seq[AdsReadCommand]) {
     def toAdsCommand: Attempt[AdsWriteReadCommand] = {
       val requestParts = commands.map(c => SumReadRequestPart(c.indexGroup, c.indexOffset, c.readLength))

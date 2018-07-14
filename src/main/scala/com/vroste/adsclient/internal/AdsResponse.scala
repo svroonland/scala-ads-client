@@ -1,4 +1,4 @@
-package com.vroste.adsclient
+package com.vroste.adsclient.internal
 
 import java.time.Instant
 

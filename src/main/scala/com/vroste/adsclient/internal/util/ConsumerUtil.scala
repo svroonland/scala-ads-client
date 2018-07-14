@@ -1,4 +1,4 @@
-package com.vroste.adsclient
+package com.vroste.adsclient.internal.util
 
 import monix.eval.Task
 import monix.reactive.Consumer

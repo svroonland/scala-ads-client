@@ -1,5 +1,6 @@
-package com.vroste.adsclient
+package com.vroste.adsclient.internal.util
 
+import com.vroste.adsclient.internal.AdsClientException
 import monix.eval.Task
 import monix.reactive.Observable
 import scodec.Attempt

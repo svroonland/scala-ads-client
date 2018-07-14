@@ -1,20 +1,21 @@
-package com.vroste.adsclient
+package com.vroste.adsclient.internal
 
 import java.time.Instant
 import java.util.concurrent.atomic.AtomicInteger
 
-import com.vroste.adsclient.AdsCommand._
-import com.vroste.adsclient.AdsResponse._
-import com.vroste.adsclient.AdsSumCommand.{AdsSumReadCommand, AdsSumWriteCommand, AdsSumWriteReadCommand}
-import com.vroste.adsclient.AttemptUtil._
-import com.vroste.adsclient.codec.AdsCodecs
+import com.vroste.adsclient._
+import com.vroste.adsclient.internal.AdsCommand._
+import com.vroste.adsclient.internal.AdsResponse._
+import com.vroste.adsclient.internal.AdsSumCommand.{AdsSumReadCommand, AdsSumWriteCommand, AdsSumWriteReadCommand}
+import com.vroste.adsclient.internal.codecs.AmsCodecs
+import com.vroste.adsclient.internal.util.AttemptUtil._
 import monix.eval.Task
 import monix.execution.Scheduler
 import monix.nio.tcp.AsyncSocketChannelClient
 import monix.reactive.Observable
 import monix.reactive.observables.ConnectableObservable
-import scodec.{Attempt, Codec}
 import scodec.bits.{BitVector, ByteVector}
+import scodec.{Attempt, Codec}
 import shapeless.HList
 
 import scala.annotation.tailrec
@@ -29,8 +30,8 @@ case class AdsNotificationSampleWithTimestamp(handle: Long, timestamp: Instant, 
   *
   * @param scheduler Execution context for reading responses
   */
-/* private */ class AdsCommandClient(settings: AdsConnectionSettings, socketClient: AsyncSocketChannelClient)(
-  implicit scheduler: Scheduler) {
+class AdsCommandClient(settings: AdsConnectionSettings, socketClient: AsyncSocketChannelClient)(
+  implicit scheduler: Scheduler) extends AmsCodecs {
 
   import AdsCommandClient._
 
@@ -133,8 +134,6 @@ case class AdsNotificationSampleWithTimestamp(handle: Long, timestamp: Instant, 
       Task.unit
     }
 
-  def keepSecond[T, U](first: T, second: U): U = second
-
   private val lastInvokeId: AtomicInteger = new AtomicInteger(1)
   private val generateInvokeId: Task[Int] = Task.eval {
     lastInvokeId.getAndIncrement()
@@ -234,6 +233,8 @@ object AdsCommandClient {
         splitByteVectorAtPositions(newRemaining, ls, acc :+ value)
     }
   }
+
+  def keepSecond[T, U](first: T, second: U): U = second
 }
 
 case class AdsClientException(message: String) extends Exception(message)

@@ -135,7 +135,8 @@ Codecs can be composed together to map to custom data types such as your own val
 A value class can be mapped to a PLC primitive value type. This allows you to write Scala code with more descriptive and possibly restricted types. The automatic conversion is thanks to [Shapeless](https://github.com/milessabin/shapeless).
 ```scala
 case class Degrees(value: Int) extends AnyVal
-val counterCodec: Codec[MyCounterType] = uint.as
+
+val degreesCodec: Codec[Degrees] = uint.as
 ```
 
 ### STRUCTs to case classes

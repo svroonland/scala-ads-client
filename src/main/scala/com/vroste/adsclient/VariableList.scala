@@ -1,16 +1,8 @@
 package com.vroste.adsclient
 
-import com.vroste.adsclient.AdsCommand.AdsWriteReadCommand
-import com.vroste.adsclient.AttemptUtil._
-import com.vroste.adsclient.SumCommandResponses.{AdsSumWriteReadCommandResponse, _}
-import com.vroste.adsclient.codec.AdsCodecs
-import monix.eval.Task
-import scodec.bits.ByteVector
-import scodec.{Attempt, Codec, Decoder, HListCodecEnrichedWithHListSupport}
+import scodec.{Codec, HListCodecEnrichedWithHListSupport}
 import shapeless.ops.hlist.{Length, Prepend, Split}
 import shapeless.{::, HList, HNil, Nat}
-
-import scala.annotation.tailrec
 
 /**
   * List of PLC variables along with their codecs for use in ADS SUM commands
@@ -44,19 +36,4 @@ class VariableList[T <: HList] private(
 object VariableList {
   def apply[T](varName: String, codec: Codec[T]): VariableList[T :: HNil] =
     new VariableList(Seq(varName), Seq(codec.sizeBound.exact.get), codec.hlist)
-}
-
-private[adsclient] object ReadManyCommandExecutor {
-
-  import AdsResponse._
-  import AdsSumCommand._
-
-
-  import AdsCommandClient._
-
-  // Alternatively, but not sure its nicer:
-//  (_, encodedValues) = lengths.foldLeft((encodedValue, List.empty[ByteVector])) { case ((remaining, acc), l) =>
-//    val (value, newRemaining) = remaining.splitAt(l)
-//    (newRemaining, acc :+ value)
-//  }
 }

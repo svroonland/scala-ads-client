@@ -1,5 +1,7 @@
-package com.vroste.adsclient
+package com.vroste.adsclient.internal.codecs
 
+import com.vroste.adsclient.AdsTransmissionMode
+import com.vroste.adsclient.internal.{AdsCommand, AdsResponse}
 import scodec.{Attempt, Codec, Err}
 
 trait AdsCommandCodecs {
@@ -31,7 +33,6 @@ trait AdsCommandCodecs {
 
   implicit val deleteDeviceNotificationCommandCodec: Codec[AdsDeleteDeviceNotificationCommand] =
     uint32L.as[AdsDeleteDeviceNotificationCommand]
-
 
   val codec: Codec[AdsCommand] = (
     addDeviceNotificationCommandCodec :+:

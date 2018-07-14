@@ -1,5 +1,6 @@
-package com.vroste.adsclient
+package com.vroste.adsclient.internal
 
+import com.vroste.adsclient.AdsTransmissionMode
 import scodec.bits.ByteVector
 
 /**
