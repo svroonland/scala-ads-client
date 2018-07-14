@@ -8,6 +8,5 @@ object AdsSumCommandResponses {
 
   case class AdsSumWriteCommandResponse(responses: List[AdsWriteCommandResponse])
 
-  case class AdsSumReadCommandResponse(responses: List[AdsReadCommandResponse])
-
+  // No read command response as we don't want to have a list of the individual responses but decode the HList of values directly
 }

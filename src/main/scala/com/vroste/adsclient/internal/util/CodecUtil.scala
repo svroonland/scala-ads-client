@@ -1,9 +1,11 @@
 package com.vroste.adsclient.internal.util
 
 import scodec.bits.BitVector
-import scodec.{Attempt, Codec, DecodeResult, SizeBound}
+import scodec.{Attempt, Codec, DecodeResult, Decoder, SizeBound}
+import scodec.codecs.provide
 
 object CodecUtil {
+
   implicit class CodecWithSizeBound[T](val codec: Codec[T]) extends AnyVal {
     /**
       * Override the sizebound
@@ -15,6 +17,16 @@ object CodecUtil {
 
       override def sizeBound: SizeBound = newSizeBound
     }
+  }
+
+  implicit class SequenceDecoders[T](val decoders: Seq[Decoder[T]]) extends AnyVal {
+    /**
+      * Turns a Seq[Decoder[T]] into a Decoder[Seq[T]]
+      */
+    def sequence: Decoder[Seq[T]] =
+      decoders.foldLeft(provide(Seq[T]()).asDecoder) { case (accCodec, currCodec) =>
+        accCodec.flatMap(acc => currCodec.map(curr => acc :+ curr))
+      }
   }
 
 }

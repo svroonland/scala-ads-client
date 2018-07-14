@@ -1,20 +1,42 @@
 package com.vroste.adsclient.internal.codecs
 
-import scodec.Codec
-import scodec.codecs.list
+import com.vroste.adsclient.internal.AdsResponse.AdsWriteReadCommandResponse
+import com.vroste.adsclient.internal.util.CodecUtil.SequenceDecoders
+import scodec.bits.ByteVector
+import scodec.codecs._
+import scodec.{Codec, Decoder}
 
+/**
+  * Codecs for the payload of the response to a writeread command for sum commands
+  */
 trait AdsSumCommandResponseCodecs extends AdsResponseCodecs {
+
   import com.vroste.adsclient.internal.AdsSumCommandResponses._
 
-  // TODO this is wrong, the results are interleaved
-  implicit val adsSumWriteReadCommandResponseCodec: Codec[AdsSumWriteReadCommandResponse] =
-    list(adsWriteReadCommandResponseCodec).xmap(AdsSumWriteReadCommandResponse, _.responses)
+  /**
+    * The payload of the response of an ADS Sum WriteRead command is encoded as a list of (errorCode, readLength)
+    * followed by the data of the individual write read commands
+    *
+    * We map it to a list of regular write read command responses, but that takes some trickery to get right
+    */
+  def adsSumWriteReadCommandResponseDecoder(nrValues: Int): Decoder[AdsSumWriteReadCommandResponse] = {
+    val errorsAndValuesCodec: Decoder[Seq[(Long, ByteVector)]] =
+      listOfN(provide(nrValues), ("errorCode" | errorCodeCodec) ~ ("length" | uint32L))
+        .flatMap[Seq[(Long, ByteVector)]] { errorCodesAndLengths =>
+        val errorCodes = errorCodesAndLengths.map(_._1)
+        val lengths = errorCodesAndLengths.map(_._2.toInt)
 
-  // TODO this is wrong, the results are interleaved
+        val valueCodecs = lengths.map(bytes)
+
+        valueCodecs.sequence.map(values => errorCodes.zip(values))
+      }
+
+    errorsAndValuesCodec
+      .map(_.map(AdsWriteReadCommandResponse.tupled).toList)
+      .map(AdsSumWriteReadCommandResponse)
+  }
+
+  // Result consists of a list of error codes
   implicit val adsSumWriteCommandResponseCodec: Codec[AdsSumWriteCommandResponse] =
     list(adsWriteCommandResponseCodec).xmap(AdsSumWriteCommandResponse, _.responses)
-
-  // TODO this is wrong, the results are interleaved
-  implicit val adsSumReadCommandResponseCodec: Codec[AdsSumReadCommandResponse] =
-    list(adsReadCommandResponseCodec).xmap(AdsSumReadCommandResponse, _.responses)
 }

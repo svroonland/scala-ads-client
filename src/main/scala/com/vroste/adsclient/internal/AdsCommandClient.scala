@@ -127,12 +127,14 @@ class AdsCommandClient(settings: AdsConnectionSettings, socketClient: AsyncSocke
       .firstL
       .timeout(settings.timeout)
 
-  def checkResponse(r: AdsResponse): Task[Unit] =
-    if (r.errorCode != 0L) {
-      Task.raiseError(AdsClientException(s"ADS error 0x${r.errorCode.toHexString}"))
+  def checkErrorCode(errorCode: Long): Task[Unit] =
+    if (errorCode != 0L) {
+      Task.raiseError(AdsClientException(s"ADS error 0x${errorCode.toHexString}"))
     } else {
       Task.unit
     }
+
+  def checkResponse(r: AdsResponse): Task[Unit] = checkErrorCode(r.errorCode)
 
   private val lastInvokeId: AtomicInteger = new AtomicInteger(1)
   private val generateInvokeId: Task[Int] = Task.eval {

@@ -1,9 +1,9 @@
 package com.vroste.adsclient.internal
 
 import com.vroste.adsclient._
-import com.vroste.adsclient.internal.util.AttemptUtil._
-import com.vroste.adsclient.internal.AdsSumCommandResponses.{AdsSumWriteCommandResponse, AdsSumWriteReadCommandResponse}
+import com.vroste.adsclient.internal.AdsSumCommandResponses.AdsSumWriteCommandResponse
 import com.vroste.adsclient.internal.codecs.{AdsResponseCodecs, AdsSumCommandResponseCodecs}
+import com.vroste.adsclient.internal.util.AttemptUtil._
 import com.vroste.adsclient.internal.util.ConsumerUtil
 import monix.eval.Task
 import monix.reactive.{Consumer, Observable}
@@ -38,8 +38,9 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
       sumCommand <- readVariablesCommand(handles.zip(command.sizes)).toTask
       adsCommand <- sumCommand.toAdsCommand.toTask
       response <- client.runCommand[AdsWriteReadCommandResponse](adsCommand)
-      value <- sumReadResponseDecoder(command.codec, command.variables.size).decodeValue(response.data.toBitVector).toTask
-    } yield value
+      errorCodesAndValue <- sumReadResponseDecoder(command.codec, command.variables.size).decodeValue(response.data.toBitVector).toTask
+      _ <- Task.traverse(errorCodesAndValue._1)(client.checkErrorCode)
+    } yield errorCodesAndValue._2
 
   override def write[T](varName: String, value: T, codec: Codec[T]): Task[Unit] =
     withVariableHandle(varName)(write(_, value, codec))
@@ -57,7 +58,8 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
       sumCommand <- writeVariablesCommand(handles.zip(command.sizes), command.codec, values).toTask
       adsCommand <- sumCommand.toAdsCommand.toTask
       response <- client.runCommand[AdsWriteReadCommandResponse](adsCommand)
-      _ <- sumWriteResponseDecoder.decodeValue(response.data.toBitVector).toTask
+      errorCodes <- sumWriteResponseDecoder.decodeValue(response.data.toBitVector).toTask
+      _ <- Task.traverse(errorCodes)(client.checkErrorCode)
     } yield ()
 
   /**
@@ -177,8 +179,10 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
       sumCommand <- createVariableHandlesCommand(command.variables).toTask
       adsCommand <- sumCommand.toAdsCommand.toTask
       response <- client.runCommand[AdsWriteReadCommandResponse](adsCommand)
-      handles <- sumWriteReadResponseDecoder[VariableHandle].decodeValue(response.data.toBitVector).toTask
-    } yield handles
+      errorCodesAndHandles <- sumWriteReadResponseDecoder[VariableHandle](command.variables.size).decodeValue(response.data.toBitVector).toTask
+      errorCodes = errorCodesAndHandles.map(_._1)
+      _ <- Task.traverse(errorCodes)(client.checkErrorCode)
+    } yield errorCodesAndHandles.map(_._2)
 
   def releaseHandles(handles: Seq[VariableHandle]): Task[Unit] =
     for {
@@ -191,19 +195,20 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
 }
 
 object AdsClientImpl extends AdsSumCommandResponseCodecs {
-  def sumWriteReadResponseDecoder[T](implicit decoderT: Decoder[T]): Decoder[Seq[T]] =
-  // TODO Check error codes
-    Decoder[AdsSumWriteReadCommandResponse].emap(_.responses.map(_.data.toBitVector).map(decoderT.decodeValue).sequence)
+  def sumWriteReadResponseDecoder[T](nrValues: Int)(implicit decoderT: Decoder[T]): Decoder[Seq[(Long, T)]] =
+    adsSumWriteReadCommandResponseDecoder(nrValues)
+      .emap(_.responses.map { r =>
+        decoderT.decodeValue(r.data.toBitVector).map((r.errorCode, _))
+      }.sequence)
 
-  def sumReadResponseDecoder[T](codec: Codec[T], nrValues: Int): Decoder[T] = {
+  def sumReadResponseDecoder[T](codec: Codec[T], nrValues: Int): Decoder[(List[Long], T)] = {
     import scodec.codecs.{listOfN, provide}
     val errorCodesCodec = listOfN(provide(nrValues), AdsResponseCodecs.errorCodeCodec)
 
-    // TODO Check error codes
-    (errorCodesCodec ~ codec).asDecoder.map(_._2)
+    (errorCodesCodec ~ codec).asDecoder
   }
 
-  def sumWriteResponseDecoder: Decoder[Unit] =
-  // TODO Check error codes
-    Decoder[AdsSumWriteCommandResponse].map(_ => ())
+  def sumWriteResponseDecoder: Decoder[List[Long]] =
+    Decoder[AdsSumWriteCommandResponse]
+      .map(_.responses.map(_.errorCode))
 }
