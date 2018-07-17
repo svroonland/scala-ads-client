@@ -156,6 +156,10 @@ class AdsCommandClient(settings: AdsConnectionSettings, socketClient: AsyncSocke
       .map(_.value)
       .doOnNext(p => println(s"Received AMS packet type ${p.header.commandId}"))
       .doOnError(e => println(s"Error in receive packets: ${e}"))
+      .doOnTerminate(_.foreach { ex =>
+        println(s"Received packets completed with exception ${ex.getMessage}")
+        ex.printStackTrace()
+      })
       .publish
 
   receivedPackets.connect()
