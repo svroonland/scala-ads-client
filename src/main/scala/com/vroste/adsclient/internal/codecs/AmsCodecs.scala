@@ -39,7 +39,7 @@ trait AmsCodecs {
 
         variableSizePrefixedBytesLong(
           size = "dataLength" | uint32L,
-          prefix = ("errorCode" | uint32L) ~ ("invokeId" | uint32),
+          prefix = ("errorCode" | uint32L) ~ ("invokeId" | uint32L),
           value = commandOrResponseCodec
         )
       }.flattenLeftPairs

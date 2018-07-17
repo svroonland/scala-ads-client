@@ -57,7 +57,8 @@ object AdsSumCommand extends AdsSumCommandCodecs {
       } yield AdsWriteReadCommand(
         indexGroup = 0xf082,
         indexOffset = commands.length,
-        readLength = commands.map(_.readLength).sum + errorCodeSize * commands.length,
+        // Result + error code + data for each sub command
+        readLength = commands.map(_.readLength + resultLengthSize + errorCodeSize).sum,
         values = requestPartsBits.toByteVector ++ valueBytes
       )
     }
@@ -70,4 +71,5 @@ object AdsSumCommand extends AdsSumCommandCodecs {
   case class SumReadRequestPart(indexGroup: Long, indexOffset: Long, length: Long)
 
   val errorCodeSize = 4
+  val resultLengthSize = 4
 }

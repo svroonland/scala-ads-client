@@ -211,7 +211,9 @@ object AdsCommandClient {
 
   def readVariablesCommand(handlesAndLengths: Seq[(VariableHandle, Long)]): Attempt[AdsSumReadCommand] =
     for {
-      subCommands <- handlesAndLengths.map((readVariableCommand _).tupled).sequence
+      subCommands <- handlesAndLengths
+        .map { case (handle, sizeInBits) => (handle, sizeInBits / 8) }
+        .map((readVariableCommand _).tupled).sequence
     } yield AdsSumReadCommand(subCommands)
 
   def writeVariablesCommand[T <: HList](handlesAndLengths: Seq[(VariableHandle, Long)], codec: Codec[T], value: T): Attempt[AdsSumWriteCommand] = {
