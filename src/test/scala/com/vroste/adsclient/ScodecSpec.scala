@@ -1,13 +1,15 @@
 package com.vroste.adsclient
 
-import com.vroste.adsclient.AdsCommand.AdsWriteReadCommand
+import com.vroste.adsclient.internal.AdsCommand.AdsWriteReadCommand
+import com.vroste.adsclient.internal.codecs.AmsCodecs
+import com.vroste.adsclient.internal.{AdsCommand, AmsHeader, AmsPacket}
 import org.scalatest.{FlatSpec, MustMatchers}
 import scodec.{Codec, codecs}
 
 /**
   * Tests for the binary encodings of the ADS protocol
   */
-class ScodecSpec extends FlatSpec with MustMatchers {
+class ScodecSpec extends FlatSpec with MustMatchers with AmsCodecs {
   val amsNetId = AmsNetId("10.211.55.3.1.1")
 
   it must "encode AMS net IDs" in {
