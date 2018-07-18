@@ -16,11 +16,11 @@ class ReadManySpec extends AsyncFlatSpec with MustMatchers {
     withClient { client =>
       val variableList = VariableList("MAIN.var1", int) +
         ("MAIN.var2", string) +
-        ("MAIN.var4", int) // + ("MAIN.var5", Codec[MyStruct])
+        ("MAIN.var4", int) + ("MAIN.var5", Codec[MyStruct])
       for {
         var1r <- client.read(variableList)
         data = Generic[MyManyData].from(var1r)
-        _ = println(s"Var1: ${data.var1}, Var2: ${data.var2}, Var4: ${data.var4}") //, Var5: ${data.var5}")
+        _ = println(s"Var1: ${data.var1}, Var2: ${data.var2}, Var4: ${data.var4}, Var5: ${data.var5}")
       } yield succeed
     }
   }

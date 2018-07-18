@@ -5,18 +5,14 @@ import java.time.{LocalDate, LocalDateTime, LocalTime}
 import com.vroste.adsclient.AdsCodecs._
 import com.vroste.adsclient.internal.AdsClientException
 import monix.eval.Task
-import monix.execution.Scheduler.Implicits.global
 import monix.reactive.Consumer
 import org.scalatest.{AsyncFlatSpec, MustMatchers}
 import scodec.Codec
 
-import scala.concurrent.Future
-import scala.concurrent.duration._
+import TestUtil._
 
 class AdsClientSpec extends AsyncFlatSpec with MustMatchers {
   def consumerToSeq[T]: Consumer[T, Seq[T]] = Consumer.foldLeft(Seq.empty[T])(_ :+ _)
-
-  val settings = AdsConnectionSettings(AmsNetId.fromString("10.211.55.3.1.1"), 851, AmsNetId.fromString("10.211.55.3.1.2"), 39205, "10.211.55.3")
 
   "ADSClient" must "connect and close to a PLC" in {
     withClient { client =>
@@ -79,12 +75,10 @@ class AdsClientSpec extends AsyncFlatSpec with MustMatchers {
     }
   }
 
-  val myStructCodec: Codec[MyStruct] = (int :: bool).as
-
   it must "read a STRUCT as case class" in {
     withClient { client =>
       for {
-        struct <- client.read("MAIN.var5", myStructCodec)
+        struct <- client.read("MAIN.var5", Codec[MyStruct])
       } yield succeed
     }
   }
@@ -116,10 +110,6 @@ class AdsClientSpec extends AsyncFlatSpec with MustMatchers {
       result.onErrorRecover { case AdsClientException(_) => succeed }
     }
   }
-
-  def withClient[T](f: AdsClient => Task[T]): Future[T] =
-    AdsClient.connect(settings).bracket(f)(_.close())
-      .delayResult(500.millis).runAsync
 }
 
-case class MyStruct(myInt: Int, myBool: Boolean)
+
