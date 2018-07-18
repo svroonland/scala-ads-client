@@ -27,13 +27,11 @@ class ReadManySpec extends AsyncFlatSpec with MustMatchers {
   }
 
   it must "write many variables at once" in {
-    import shapeless.::
     withClient { client =>
-      val variableList = VariableList("MAIN.var1", int) + ("MAIN.var4", int)
-      //        ("MAIN.var4", int) + ("MAIN.var5", Codec[MyStruct])
+      val variableList = VariableList("MAIN.var1", int) + ("MAIN.var2", string) + ("MAIN.var4", int) + ("MAIN.var5", Codec[MyStruct])
 
       for {
-        _ <- client.write(variableList, 8 :: 10 :: HNil) // "New Value" :: 3 :: MyStruct(1, true) :: HNil)
+        _ <- client.write(variableList, 8 :: "New value !! Yes" :: 10 :: MyStruct(103, true) :: HNil)
       } yield succeed
     }
   }
