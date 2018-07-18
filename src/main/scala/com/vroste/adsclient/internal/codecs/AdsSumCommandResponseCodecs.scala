@@ -22,11 +22,14 @@ trait AdsSumCommandResponseCodecs extends AdsResponseCodecs {
   def adsSumWriteReadCommandResponseDecoder(nrValues: Int): Decoder[AdsSumWriteReadCommandResponse] = {
     val errorsAndValuesCodec: Decoder[Seq[(Long, ByteVector)]] =
       listOfN(provide(nrValues), ("errorCode" | errorCodeCodec) ~ ("length" | uint32L))
+        .withContext("WriteRead response error codes and lengths")
         .flatMap[Seq[(Long, ByteVector)]] { errorCodesAndLengths =>
         val errorCodes = errorCodesAndLengths.map(_._1)
         val lengths = errorCodesAndLengths.map(_._2.toInt)
 
-        val valueCodecs = lengths.map(bytes)
+        val valueCodecs = lengths.zipWithIndex.map { case (length, index) =>
+          bytes(length).withContext(s"WriteRead sub response value ${index + 1}")
+        }
 
         valueCodecs.sequence.map(errorCodes zip _)
       }

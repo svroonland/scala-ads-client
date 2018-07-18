@@ -26,10 +26,39 @@ class ReadManySpec extends AsyncFlatSpec with MustMatchers {
     }
   }
 
+  it must "write many variables at once" in {
+    import shapeless.::
+    withClient { client =>
+      val variableList = VariableList("MAIN.var1", int) + ("MAIN.var4", int)
+      //        ("MAIN.var4", int) + ("MAIN.var5", Codec[MyStruct])
+
+      for {
+        _ <- client.write(variableList, 8 :: 10 :: HNil) // "New Value" :: 3 :: MyStruct(1, true) :: HNil)
+      } yield succeed
+    }
+  }
+
   it must "give an error when passing the wrong codec to one of the variables" in {
     withClient { client =>
       val variableList = VariableList("MAIN.var1", string) +
         ("MAIN.var2", string)
+      val result = for {
+        var1r <- client.read(variableList)
+        (var1, var2) = var1r.tupled
+        _ = println(s"Var1: ${var1}, Var2: ${var2}")
+      } yield fail
+
+      result.onErrorRecover { case AdsClientException(e) =>
+        println(s"Got ADS exception: ${e}")
+        succeed
+      }
+    }
+  }
+
+  it must "give an error when attemptign to read a variable that does not exist" in {
+    withClient { client =>
+      val variableList = VariableList("MAIN.var1", int) +
+        ("MAIN.varNotExist", string)
       val result = for {
         var1r <- client.read(variableList)
         (var1, var2) = var1r.tupled

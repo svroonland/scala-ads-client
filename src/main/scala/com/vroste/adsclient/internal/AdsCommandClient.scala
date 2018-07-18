@@ -233,14 +233,13 @@ object AdsCommandClient {
       values = ByteVector.concat(subCommands.map(_.values))
     } yield AdsSumWriteCommand(subCommands, values)
 
-  // TODO does this work for strings..?
   @tailrec
-  def splitByteVectorAtPositions(remaining: ByteVector, lengths: List[Long], acc: List[ByteVector] = List.empty): List[ByteVector] = {
+  def splitByteVectorAtPositions(remaining: ByteVector, lengthsInBits: List[Long], acc: List[ByteVector] = List.empty): List[ByteVector] = {
     import scala.collection.immutable.::
-    lengths match {
+    lengthsInBits match {
       case Nil => acc
       case l :: ls =>
-        val (value, newRemaining) = remaining.splitAt(l)
+        val (value, newRemaining) = remaining.splitAt(l / 8)
         splitByteVectorAtPositions(newRemaining, ls, acc :+ value)
     }
   }
