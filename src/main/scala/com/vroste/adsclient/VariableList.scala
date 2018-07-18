@@ -29,11 +29,18 @@ class VariableList[T <: HList] private(
     * @param varName Name of the variable
     * @param codecU  Codec for a value of type [[U]]
     */
-  def +[U, TU <: HList, KLen <: Nat](varName: String, codecU: Codec[U])(implicit prepend: Prepend.Aux[T, U :: HNil, TU], length: Length.Aux[T, KLen], split: Split.Aux[TU, KLen, T, U :: HNil]): VariableList[TU] =
-    new VariableList(variables :+ varName, sizes :+ codecU.sizeBound.exact.getOrElse(throw new IllegalArgumentException("Expected codec with upper bound")), codec ::: codecU.hlist)
+  def +[U, TU <: HList, KLen <: Nat](varName: String, codecU: Codec[U])(
+    implicit prepend: Prepend.Aux[T, U :: HNil, TU],
+    length: Length.Aux[T, KLen],
+    split: Split.Aux[TU, KLen, T, U :: HNil]): VariableList[TU] =
+    new VariableList(
+      variables = variables :+ varName,
+      sizes = sizes :+ codecU.sizeBound.exact.getOrElse(throw new IllegalArgumentException("Expected codec with upper bound")),
+      codec = codec ::: codecU.withContext(varName).hlist
+    )
 }
 
 object VariableList {
   def apply[T](varName: String, codec: Codec[T]): VariableList[T :: HNil] =
-    new VariableList(Seq(varName), Seq(codec.sizeBound.exact.get), codec.hlist)
+    new VariableList(Seq(varName), Seq(codec.sizeBound.exact.get), codec.withContext(varName).hlist)
 }
