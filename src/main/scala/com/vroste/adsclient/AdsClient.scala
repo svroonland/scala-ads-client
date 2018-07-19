@@ -126,6 +126,11 @@ trait AdsClient {
   def consumerFor[T <: HList](variables: VariableList[T], codec: Codec[T]): Consumer[T, Unit]
 
   /**
+    * Notifications of ADS status changes
+    */
+  def statusChanges: Observable[AdsNotification[AdsState]]
+
+  /**
     * Closes the underlying connection to the ADS server
     *
     * This will also complete any live observables and consumer tasks with an error. It is recommended

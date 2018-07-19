@@ -19,7 +19,7 @@ trait AdsCodecs {
   val dword: Codec[Long] = scodecs.uint32L
   val sint: Codec[Int] = scodecs.int8L
   val usint: Codec[Int] = scodecs.uint8L
-  val int: Codec[Int] = scodecs.int16L
+  val int: Codec[Short] = scodecs.int16L.xmap(_.toShort, _.toInt)
   val uint: Codec[Int] = scodecs.uint16L
   val dint: Codec[Int] = scodecs.int32L
   val udint: Codec[Long] = scodecs.uint32L

@@ -31,7 +31,7 @@ class ReadManySpec extends AsyncFlatSpec with MustMatchers {
       val variableList = VariableList("MAIN.var1", int) + ("MAIN.var2", string) + ("MAIN.var4", int) + ("MAIN.var5", Codec[MyStruct])
 
       for {
-        _ <- client.write(variableList, 8 :: "New value !! Yes" :: 10 :: MyStruct(103, true) :: HNil)
+        _ <- client.write(variableList, 8.toShort :: "New value !! Yes" :: 10.toShort :: MyStruct(103, true) :: HNil)
       } yield succeed
     }
   }

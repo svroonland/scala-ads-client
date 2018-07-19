@@ -52,9 +52,16 @@ class AdsCommandClient(settings: AdsConnectionSettings, socketClient: AsyncSocke
                             length: Long,
                             maxDelay: Int,
                             cycleTime: Int): Task[NotificationHandle] =
+    getNotificationHandle(0x0000F005, variableHandle.value, length, maxDelay, cycleTime)
+
+  def getNotificationHandle(indexGroup: Long,
+                            indexOffset: Long,
+                            length: Long,
+                            maxDelay: Int,
+                            cycleTime: Int): Task[NotificationHandle] =
     runCommand[AdsAddDeviceNotificationCommandResponse] {
-      AdsAddDeviceNotificationCommand(0x0000F005,
-        variableHandle.value,
+      AdsAddDeviceNotificationCommand(indexOffset,
+        indexGroup,
         length,
         AdsTransmissionMode.OnChange,
         maxDelay,
