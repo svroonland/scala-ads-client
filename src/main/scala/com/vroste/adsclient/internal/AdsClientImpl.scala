@@ -184,7 +184,7 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
     resourcesToBeReleased.increment.bracket(_ => t)(_ => resourcesToBeReleased.decrement)
 
   override def statusChanges: Observable[AdsNotification[AdsState]] =
-    notificationsFor(indexGroup = 61696, indexOffset = 0, codec = adsStateCodec)
+    notificationsFor(indexGroup = 0x0000F100, indexOffset = 0, codec = adsStateCodec)
 
   /**
     * Closes the socket connection after waiting for any acquired resources to be released

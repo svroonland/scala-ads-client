@@ -60,8 +60,8 @@ class AdsCommandClient(settings: AdsConnectionSettings, socketClient: AsyncSocke
                             maxDelay: Int,
                             cycleTime: Int): Task[NotificationHandle] =
     runCommand[AdsAddDeviceNotificationCommandResponse] {
-      AdsAddDeviceNotificationCommand(indexOffset,
-        indexGroup,
+      AdsAddDeviceNotificationCommand(indexGroup,
+        indexOffset,
         length,
         AdsTransmissionMode.OnChange,
         maxDelay,

@@ -3,13 +3,12 @@ package com.vroste.adsclient
 import java.time.{LocalDate, LocalDateTime, LocalTime}
 
 import com.vroste.adsclient.AdsCodecs._
+import com.vroste.adsclient.TestUtil._
 import com.vroste.adsclient.internal.AdsClientException
 import monix.eval.Task
 import monix.reactive.Consumer
 import org.scalatest.{AsyncFlatSpec, MustMatchers}
 import scodec.Codec
-
-import TestUtil._
 
 class AdsClientSpec extends AsyncFlatSpec with MustMatchers {
   def consumerToSeq[T]: Consumer[T, Seq[T]] = Consumer.foldLeft(Seq.empty[T])(_ :+ _)
@@ -108,6 +107,18 @@ class AdsClientSpec extends AsyncFlatSpec with MustMatchers {
         _ <- client.read("MAIN.var1", lreal)
       } yield fail
       result.onErrorRecover { case AdsClientException(_) => succeed }
+    }
+  }
+
+  // Run manually
+  it must "read ADS state changes" in {
+    withClient { client =>
+      val statusChanges = client.statusChanges
+
+      import scala.concurrent.duration._
+      for {
+        _ <- statusChanges.takeByTimespan(30.seconds).doOnNext(println).completedL
+      } yield succeed
     }
   }
 }
