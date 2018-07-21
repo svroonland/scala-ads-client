@@ -123,9 +123,14 @@ trait AdsClient {
   def consumerFor[T <: HList](variables: VariableList[T], codec: Codec[T]): Consumer[T, Unit]
 
   /**
-    * Notifications of ADS status changes
+    * Read the ADS state
     */
-  def statusChanges: Observable[AdsNotification[AdsState]]
+  def readState: Task[AdsState]
+
+  /**
+    * Notifications of ADS state changes
+    */
+  def stateChanges: Observable[AdsNotification[AdsState]]
 
   /**
     * Closes the underlying connection to the ADS server

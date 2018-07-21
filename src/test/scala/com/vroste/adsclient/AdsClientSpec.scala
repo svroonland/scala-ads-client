@@ -111,7 +111,7 @@ class AdsClientSpec extends AsyncFlatSpec with MustMatchers {
   // Run manually
   it must "read ADS state changes" in {
     withClient { client =>
-      val statusChanges = client.statusChanges
+      val statusChanges = client.stateChanges
 
       import scala.concurrent.duration._
       for {

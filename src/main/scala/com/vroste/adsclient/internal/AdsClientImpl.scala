@@ -25,9 +25,12 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
     withVariableHandle(varName)(read(_, codec))
 
   override def read[T](handle: VariableHandle, codec: Codec[T]): Task[T] =
+    read(indexGroup = 0xF005, indexOffset = handle.value, codec)
+
+  def read[T](indexGroup: Long, indexOffset: Long, codec: Codec[T]): Task[T] =
     for {
       size <- Task.pure(codec.sizeBound.upperBound.getOrElse(codec.sizeBound.lowerBound) / 8)
-      data <- client.readVariable(handle, size)
+      data <- client.read(indexGroup, indexOffset, size)
       decoded <- codec.decode(BitVector(data)).toTask
     } yield decoded.value
 
@@ -184,8 +187,11 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
   private def withResource[T](t: Task[T]): Task[T] =
     resourcesToBeReleased.increment.bracket(_ => t)(_ => resourcesToBeReleased.decrement)
 
-  override def statusChanges: Observable[AdsNotification[AdsState]] =
+  override def stateChanges: Observable[AdsNotification[AdsState]] =
     notificationsFor(indexGroup = 0x0000F100, indexOffset = 0, codec = adsStateCodec)
+
+  override def readState: Task[AdsState] =
+    read(indexGroup = 0xF100, indexOffset = 0, codec = adsStateCodec)
 
   /**
     * Closes the socket connection after waiting for any acquired resources to be released

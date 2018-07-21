@@ -80,9 +80,9 @@ class AdsCommandClient(settings: AdsConnectionSettings, socketClient: AsyncSocke
       AdsWriteCommand(indexGroup = 0x0000F005, indexOffset = variableHandle.value, values = value)
     }.map(_ => ())
 
-  def readVariable(variableHandle: VariableHandle, size: Long): Task[ByteVector] =
+  def read(indexGroup: Long, indexOffset: Long, size: Long): Task[ByteVector] =
     for {
-      command <- readVariableCommand(variableHandle, size).toTask
+      command <- readCommand(indexGroup, indexOffset, size).toTask
       response <- runCommand[AdsReadCommandResponse](command)
     } yield response.data
 
@@ -202,8 +202,11 @@ object AdsCommandClient extends AdsCommandCodecs {
     } yield AdsWriteCommand(indexGroup = 0x0000F006, indexOffset = 0x00000000, values = encodedHandle.toByteVector)
 
   def readVariableCommand(handle: VariableHandle, size: Long): Attempt[AdsReadCommand] =
+    readCommand(0xF005, handle.value, size)
+
+  def readCommand(indexGroup: Long, indexOffset: Long, size: Long): Attempt[AdsReadCommand] =
     Attempt.successful {
-      AdsReadCommand(indexGroup = 0x0000F005, indexOffset = handle.value, readLength = size)
+      AdsReadCommand(indexGroup, indexOffset, readLength = size)
     }
 
   def writeVariableCommand(handle: VariableHandle, value: ByteVector): Attempt[AdsWriteCommand] =
