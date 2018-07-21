@@ -2,7 +2,7 @@ package com.vroste.adsclient
 
 import com.vroste.adsclient.internal.AdsCommand.AdsWriteReadCommand
 import com.vroste.adsclient.internal.codecs.AmsCodecs
-import com.vroste.adsclient.internal.{AdsCommand, AmsHeader, AmsPacket}
+import com.vroste.adsclient.internal.{AdsCommand, AmsHeader, AmsPacket, IndexGroups}
 import org.scalatest.{FlatSpec, MustMatchers}
 import scodec.{Codec, codecs}
 
@@ -19,7 +19,7 @@ class ScodecSpec extends FlatSpec with MustMatchers with AmsCodecs {
   it must "encode a write read command" in {
     val settings = AdsConnectionSettings(amsNetId, 851, amsNetId, 39205, "10.255.33.1", 48898)
     val varName = "MAIN.var1"
-    val command = AdsWriteReadCommand(0x0000F003, 0x00000000, 4, codecs.cstring.encode(varName).getOrElse(???).toByteVector)
+    val command = AdsWriteReadCommand(IndexGroups.GetSymHandleByName, 0x00000000, 4, codecs.cstring.encode(varName).getOrElse(???).toByteVector)
 
     val packet = AmsPacket(AmsHeader(settings.amsNetIdTarget, settings.amsPortTarget, settings.amsNetIdSource, settings.amsPortSource, AdsCommand.commandId(command), 4, 0, 1, Left(command)))
 

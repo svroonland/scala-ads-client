@@ -25,7 +25,7 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
     withVariableHandle(varName)(read(_, codec))
 
   override def read[T](handle: VariableHandle, codec: Codec[T]): Task[T] =
-    read(indexGroup = 0xF005, indexOffset = handle.value, codec)
+    read(indexGroup = IndexGroups.ReadWriteSymValByHandle, indexOffset = handle.value, codec)
 
   def read[T](indexGroup: Long, indexOffset: Long, codec: Codec[T]): Task[T] =
     for {
@@ -106,7 +106,7 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
     } yield ()
 
     ObservableUtil.bracket(acquire) { varHandle =>
-      withNotificationHandle(0x0000F005, varHandle.value, codec)(f)
+      withNotificationHandle(IndexGroups.ReadWriteSymValByHandle, varHandle.value, codec)(f)
     }(release)
   }
 
