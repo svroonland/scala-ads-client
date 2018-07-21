@@ -254,5 +254,3 @@ object AdsCommandClient extends AdsCommandCodecs {
 
   def keepSecond[T, U](first: T, second: U): U = second
 }
-
-case class AdsClientException(message: String) extends Exception(message)

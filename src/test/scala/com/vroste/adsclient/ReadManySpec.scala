@@ -5,7 +5,6 @@ import monix.reactive.Consumer
 import org.scalatest.{AsyncFlatSpec, MustMatchers}
 import shapeless._
 import TestUtil._
-import com.vroste.adsclient.internal.AdsClientException
 import scodec.Codec
 
 class ReadManySpec extends AsyncFlatSpec with MustMatchers {

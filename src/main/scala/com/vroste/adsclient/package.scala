@@ -73,4 +73,6 @@ package object adsclient extends AdsCodecs {
   case class VariableHandle(value: Long) extends AnyVal
 
   case class NotificationHandle(value: Long) extends AnyVal
+
+  case class AdsClientException(message: String) extends Exception(message)
 }

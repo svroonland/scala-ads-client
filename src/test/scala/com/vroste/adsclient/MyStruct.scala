@@ -1,7 +1,6 @@
 package com.vroste.adsclient
 
 import scodec.Codec
-import AdsCodecs._
 
 case class MyStruct(myInt: Short, myBool: Boolean)
 
