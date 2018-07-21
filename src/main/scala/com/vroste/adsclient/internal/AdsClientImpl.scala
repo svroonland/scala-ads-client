@@ -2,9 +2,9 @@ package com.vroste.adsclient.internal
 
 import com.vroste.adsclient._
 import com.vroste.adsclient.internal.AdsSumCommandResponses.AdsSumWriteCommandResponse
-import com.vroste.adsclient.internal.codecs.{AdsResponseCodecs, AdsSumCommandResponseCodecs}
+import com.vroste.adsclient.internal.codecs.{AdsCommandCodecs, AdsResponseCodecs, AdsSumCommandResponseCodecs}
 import com.vroste.adsclient.internal.util.AttemptUtil._
-import com.vroste.adsclient.internal.util.ConsumerUtil
+import com.vroste.adsclient.internal.util.{ConsumerUtil, ObservableUtil}
 import monix.eval.Task
 import monix.reactive.{Consumer, Observable}
 import scodec.bits.BitVector
@@ -16,6 +16,7 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
   import AdsClientImpl._
   import AdsCommandClient._
   import AdsResponse._
+  import internal.codecs.AdsCommandCodecs.variableHandleCodec
 
   // For proper shutdown, we need to keep track of any cleanup commands that are pending and need the ADS client
   val resourcesToBeReleased: CountingSemaphore = new CountingSemaphore
@@ -24,9 +25,12 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
     withVariableHandle(varName)(read(_, codec))
 
   override def read[T](handle: VariableHandle, codec: Codec[T]): Task[T] =
+    read(indexGroup = IndexGroups.ReadWriteSymValByHandle, indexOffset = handle.value, codec)
+
+  def read[T](indexGroup: Long, indexOffset: Long, codec: Codec[T]): Task[T] =
     for {
       size <- Task.pure(codec.sizeBound.upperBound.getOrElse(codec.sizeBound.lowerBound) / 8)
-      data <- client.readVariable(handle, size)
+      data <- client.read(indexGroup, indexOffset, size)
       decoded <- codec.decode(BitVector(data)).toTask
     } yield decoded.value
 
@@ -73,32 +77,55 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
     * @return
     */
   override def notificationsFor[T](varName: String, codec: Codec[T]): Observable[AdsNotification[T]] =
-    withNotificationHandle(varName, codec) { handle =>
-      client.notificationSamples
-        .filter(_.handle == handle.value)
-        .flatMap { sample =>
-          codec.decode(BitVector(sample.data)).toObservable
-            .map(decodeResult => AdsNotification(decodeResult.value, sample.timestamp))
-        }
-    }
+    withNotificationHandle(varName, codec)(notificationsForHandle(_, codec))
+
+  private def notificationsForHandle[T](handle: NotificationHandle, codec: Codec[T]): Observable[AdsNotification[T]] =
+    client.notificationSamples
+      .filter(_.handle == handle.value)
+      .flatMap { sample =>
+        codec.decode(BitVector(sample.data)).toObservable
+          .map(decodeResult => AdsNotification(decodeResult.value, sample.timestamp))
+      }
+
+  private def notificationsFor[T](indexGroup: Long, indexOffset: Long, codec: Codec[T]): Observable[AdsNotification[T]] =
+    withNotificationHandle(indexGroup, indexOffset, codec)(notificationsForHandle(_, codec))
 
   /**
     * Takes a function producing an observable for some notification handle and produces an observable that
-    * when subscribed creates a notification handle and when unsubscribed deletes the notification handle
+    * when subscribed creates a notification handle and when unsubscribed or completed deletes the notification handle
     */
-  def withNotificationHandle[U](varName: String, codec: Codec[_])(f: NotificationHandle => Observable[U]): Observable[U] =
-    Observable.fromTask {
-      val readLength = codec.sizeBound.upperBound.getOrElse(codec.sizeBound.lowerBound) / 8
+  def withNotificationHandle[U](varName: String, codec: Codec[_])(f: NotificationHandle => Observable[U]): Observable[U] = {
+    val acquire = for {
+      handle <- client.getVariableHandle(varName)
+      _ <- resourcesToBeReleased.increment
+    } yield handle
 
-      withVariableHandle(varName) { varHandle =>
-        for {
-          notificationHandle <- client.getNotificationHandle(varHandle, readLength, 0, 100) // TODO cycletime
-        } yield
-          f(notificationHandle).doOnTerminateTask(_ => {
-            client.deleteNotificationHandle(notificationHandle).forkAndForget // Important! To allow downstream to cancel the Observable
-          })
-      }
-    }.flatten
+    def release(handle: VariableHandle) = for {
+      _ <- client.releaseVariableHandle(handle)
+      _ <- resourcesToBeReleased.decrement
+    } yield ()
+
+    ObservableUtil.bracket(acquire) { varHandle =>
+      withNotificationHandle(IndexGroups.ReadWriteSymValByHandle, varHandle.value, codec)(f)
+    }(release)
+  }
+
+  def withNotificationHandle[U](indexGroup: Long, indexOffset: Long, codec: Codec[_])(f: NotificationHandle => Observable[U]): Observable[U] = {
+    val readLength = codec.sizeBound.upperBound.getOrElse(codec.sizeBound.lowerBound) / 8
+
+    val acquire = for {
+      notificationHandle <- client.getNotificationHandle(indexGroup, indexOffset, readLength, 0, 100)
+      _ <- resourcesToBeReleased.increment
+    } yield notificationHandle
+
+    def release(notificationHandle: NotificationHandle) =
+      for {
+        _ <- client.deleteNotificationHandle(notificationHandle)
+        _ <- resourcesToBeReleased.decrement
+      } yield ()
+
+    ObservableUtil.bracket(acquire)(f)(release)
+  }
 
   /**
     * Creates a consumer that writes elements to a PLC variable
@@ -158,6 +185,12 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
   private def withResource[T](t: Task[T]): Task[T] =
     resourcesToBeReleased.increment.bracket(_ => t)(_ => resourcesToBeReleased.decrement)
 
+  override def stateChanges: Observable[AdsNotification[AdsState]] =
+    notificationsFor(indexGroup = 0x0000F100, indexOffset = 0, codec = adsStateCodec)
+
+  override def readState: Task[AdsState] =
+    read(indexGroup = 0xF100, indexOffset = 0, codec = adsStateCodec)
+
   /**
     * Closes the socket connection after waiting for any acquired resources to be released
     *
@@ -195,6 +228,7 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
 }
 
 object AdsClientImpl extends AdsSumCommandResponseCodecs {
+  import AdsCommandCodecs.variableHandleCodec
 
   import scodec.codecs.{listOfN, provide}
 

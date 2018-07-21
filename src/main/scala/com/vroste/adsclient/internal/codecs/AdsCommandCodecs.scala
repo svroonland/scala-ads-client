@@ -1,12 +1,17 @@
 package com.vroste.adsclient.internal.codecs
 
-import com.vroste.adsclient.AdsTransmissionMode
+import com.vroste.adsclient.{AdsCodecs, AdsState, AdsTransmissionMode, VariableHandle}
 import com.vroste.adsclient.internal.{AdsCommand, AdsResponse}
 import scodec.{Attempt, Codec, Err}
+
 
 trait AdsCommandCodecs {
   import AdsCommand._
   import scodec.codecs._
+
+  implicit val variableHandleCodec: Codec[VariableHandle] = AdsCodecs.udint.xmap(VariableHandle.apply, _.value)
+
+  implicit val adsStateCodec: Codec[AdsState] = AdsCodecs.int.xmap(AdsState.values(_), AdsState.indexOf(_).toShort)
 
   implicit val adsTransmissionModeCodec: Codec[AdsTransmissionMode] = uint32L.xmapc[AdsTransmissionMode] {
     l => if (l == 3L) AdsTransmissionMode.Cyclic else AdsTransmissionMode.OnChange

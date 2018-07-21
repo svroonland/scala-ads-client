@@ -7,7 +7,7 @@ import com.vroste.adsclient._
 import com.vroste.adsclient.internal.AdsCommand._
 import com.vroste.adsclient.internal.AdsResponse._
 import com.vroste.adsclient.internal.AdsSumCommand.{AdsSumReadCommand, AdsSumWriteCommand, AdsSumWriteReadCommand}
-import com.vroste.adsclient.internal.codecs.AmsCodecs
+import com.vroste.adsclient.internal.codecs.{AdsCommandCodecs, AmsCodecs}
 import com.vroste.adsclient.internal.util.AttemptUtil._
 import monix.eval.Task
 import monix.execution.Scheduler
@@ -34,6 +34,7 @@ class AdsCommandClient(settings: AdsConnectionSettings, socketClient: AsyncSocke
   implicit scheduler: Scheduler) extends AmsCodecs {
 
   import AdsCommandClient._
+  import internal.codecs.AdsCommandCodecs.variableHandleCodec
 
   def getVariableHandle(varName: String): Task[VariableHandle] =
     for {
@@ -52,9 +53,16 @@ class AdsCommandClient(settings: AdsConnectionSettings, socketClient: AsyncSocke
                             length: Long,
                             maxDelay: Int,
                             cycleTime: Int): Task[NotificationHandle] =
+    getNotificationHandle(IndexGroups.ReadWriteSymValByHandle, variableHandle.value, length, maxDelay, cycleTime)
+
+  def getNotificationHandle(indexGroup: Long,
+                            indexOffset: Long,
+                            length: Long,
+                            maxDelay: Int,
+                            cycleTime: Int): Task[NotificationHandle] =
     runCommand[AdsAddDeviceNotificationCommandResponse] {
-      AdsAddDeviceNotificationCommand(0x0000F005,
-        variableHandle.value,
+      AdsAddDeviceNotificationCommand(indexGroup,
+        indexOffset,
         length,
         AdsTransmissionMode.OnChange,
         maxDelay,
@@ -69,12 +77,12 @@ class AdsCommandClient(settings: AdsConnectionSettings, socketClient: AsyncSocke
 
   def writeToVariable(variableHandle: VariableHandle, value: ByteVector): Task[Unit] =
     runCommand[AdsWriteCommandResponse] {
-      AdsWriteCommand(indexGroup = 0x0000F005, indexOffset = variableHandle.value, values = value)
+      AdsWriteCommand(indexGroup = IndexGroups.ReadWriteSymValByHandle, indexOffset = variableHandle.value, values = value)
     }.map(_ => ())
 
-  def readVariable(variableHandle: VariableHandle, size: Long): Task[ByteVector] =
+  def read(indexGroup: Long, indexOffset: Long, size: Long): Task[ByteVector] =
     for {
-      command <- readVariableCommand(variableHandle, size).toTask
+      command <- readCommand(indexGroup, indexOffset, size).toTask
       response <- runCommand[AdsReadCommandResponse](command)
     } yield response.data
 
@@ -182,31 +190,34 @@ class AdsCommandClient(settings: AdsConnectionSettings, socketClient: AsyncSocke
       .flatMap(Observable.fromIterable)
 }
 
-object AdsCommandClient {
+object AdsCommandClient extends AdsCommandCodecs {
   def getVariableHandleCommand(varName: String): Attempt[AdsWriteReadCommand] =
     for {
       encodedVarName <- AdsCodecs.string.encode(varName)
-    } yield AdsWriteReadCommand(indexGroup = 0x0000F003, indexOffset = 0x00000000, readLength = 4, values = encodedVarName.toByteVector)
+    } yield AdsWriteReadCommand(indexGroup = IndexGroups.GetSymHandleByName, indexOffset = 0x00000000, readLength = 4, values = encodedVarName.toByteVector)
 
   def releaseVariableHandleCommand(handle: VariableHandle): Attempt[AdsWriteCommand] =
     for {
       encodedHandle <- Codec[VariableHandle].encode(handle)
-    } yield AdsWriteCommand(indexGroup = 0x0000F006, indexOffset = 0x00000000, values = encodedHandle.toByteVector)
+    } yield AdsWriteCommand(indexGroup = IndexGroups.ReleaseSymHandle, indexOffset = 0x00000000, values = encodedHandle.toByteVector)
 
   def readVariableCommand(handle: VariableHandle, size: Long): Attempt[AdsReadCommand] =
+    readCommand(IndexGroups.ReadWriteSymValByHandle, handle.value, size)
+
+  def readCommand(indexGroup: Long, indexOffset: Long, size: Long): Attempt[AdsReadCommand] =
     Attempt.successful {
-      AdsReadCommand(indexGroup = 0x0000F005, indexOffset = handle.value, readLength = size)
+      AdsReadCommand(indexGroup, indexOffset, readLength = size)
     }
 
   def writeVariableCommand(handle: VariableHandle, value: ByteVector): Attempt[AdsWriteCommand] =
     Attempt.successful {
-      AdsWriteCommand(indexGroup = 0x0000F005, indexOffset = handle.value, values = value)
+      AdsWriteCommand(IndexGroups.ReadWriteSymValByHandle, indexOffset = handle.value, values = value)
     }
 
   def createVariableHandlesCommand(variables: Seq[String]): Attempt[AdsSumWriteReadCommand] =
     for {
       encodedVarNames <- variables.map(AdsCodecs.string.encode).sequence
-      commands = encodedVarNames.map(_.toByteVector).map(AdsWriteReadCommand(0x0000F003, 0x00000000, 4, _))
+      commands = encodedVarNames.map(_.toByteVector).map(AdsWriteReadCommand(IndexGroups.GetSymHandleByName, 0x00000000, 4, _))
     } yield AdsSumWriteReadCommand(commands)
 
   def readVariablesCommand(handlesAndLengths: Seq[(VariableHandle, Long)]): Attempt[AdsSumReadCommand] =
@@ -246,5 +257,3 @@ object AdsCommandClient {
 
   def keepSecond[T, U](first: T, second: U): U = second
 }
-
-case class AdsClientException(message: String) extends Exception(message)
