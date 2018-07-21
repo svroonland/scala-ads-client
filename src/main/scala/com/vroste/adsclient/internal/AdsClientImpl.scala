@@ -2,7 +2,7 @@ package com.vroste.adsclient.internal
 
 import com.vroste.adsclient._
 import com.vroste.adsclient.internal.AdsSumCommandResponses.AdsSumWriteCommandResponse
-import com.vroste.adsclient.internal.codecs.{AdsResponseCodecs, AdsSumCommandResponseCodecs}
+import com.vroste.adsclient.internal.codecs.{AdsCommandCodecs, AdsResponseCodecs, AdsSumCommandResponseCodecs}
 import com.vroste.adsclient.internal.util.AttemptUtil._
 import com.vroste.adsclient.internal.util.{ConsumerUtil, ObservableUtil}
 import monix.eval.Task
@@ -16,6 +16,7 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
   import AdsClientImpl._
   import AdsCommandClient._
   import AdsResponse._
+  import internal.codecs.AdsCommandCodecs.variableHandleCodec
 
   // For proper shutdown, we need to keep track of any cleanup commands that are pending and need the ADS client
   val resourcesToBeReleased: CountingSemaphore = new CountingSemaphore
@@ -223,6 +224,7 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
 }
 
 object AdsClientImpl extends AdsSumCommandResponseCodecs {
+  import AdsCommandCodecs.variableHandleCodec
 
   import scodec.codecs.{listOfN, provide}
 

@@ -7,7 +7,7 @@ import com.vroste.adsclient._
 import com.vroste.adsclient.internal.AdsCommand._
 import com.vroste.adsclient.internal.AdsResponse._
 import com.vroste.adsclient.internal.AdsSumCommand.{AdsSumReadCommand, AdsSumWriteCommand, AdsSumWriteReadCommand}
-import com.vroste.adsclient.internal.codecs.AmsCodecs
+import com.vroste.adsclient.internal.codecs.{AdsCommandCodecs, AmsCodecs}
 import com.vroste.adsclient.internal.util.AttemptUtil._
 import monix.eval.Task
 import monix.execution.Scheduler
@@ -34,6 +34,7 @@ class AdsCommandClient(settings: AdsConnectionSettings, socketClient: AsyncSocke
   implicit scheduler: Scheduler) extends AmsCodecs {
 
   import AdsCommandClient._
+  import internal.codecs.AdsCommandCodecs.variableHandleCodec
 
   def getVariableHandle(varName: String): Task[VariableHandle] =
     for {
@@ -189,7 +190,7 @@ class AdsCommandClient(settings: AdsConnectionSettings, socketClient: AsyncSocke
       .flatMap(Observable.fromIterable)
 }
 
-object AdsCommandClient {
+object AdsCommandClient extends AdsCommandCodecs {
   def getVariableHandleCommand(varName: String): Attempt[AdsWriteReadCommand] =
     for {
       encodedVarName <- AdsCodecs.string.encode(varName)

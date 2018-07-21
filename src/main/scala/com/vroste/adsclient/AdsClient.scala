@@ -1,7 +1,5 @@
 package com.vroste.adsclient
 
-import java.time.Instant
-
 import com.vroste.adsclient.internal.{AdsClientImpl, AdsCommandClient}
 import monix.eval.Task
 import monix.execution.Scheduler
@@ -17,7 +15,6 @@ import shapeless.HList
   * Supports reading/writing all primitive types as well as creating codecs for custom data types (case classes)
   */
 trait AdsClient {
-  // TODO read state, state notifications
   // TODO write control
 
   // TODO the methods taking handles are useless if we don't offer create and release handles methods
@@ -154,32 +151,3 @@ object AdsClient {
     } yield new AdsClientImpl(new AdsCommandClient(settings, socketClient))
   }
 }
-
-/**
-  * A notification of a change in a variable
-  *
-  * @param value Reported value of the variable
-  * @param timestamp Time as reported by the ADS server
-  * @tparam T Type of the value
-  */
-case class AdsNotification[T](value: T, timestamp: Instant)
-
-case class AdsDeviceInfo(majorVersion: Byte, minorVersion: Byte, versionBuild: Short, deviceName: String)
-
-sealed trait AdsTransmissionMode
-
-object AdsTransmissionMode {
-
-  case object OnChange extends AdsTransmissionMode
-
-  case object Cyclic extends AdsTransmissionMode
-
-}
-
-case class VariableHandle(value: Long) extends AnyVal
-
-object VariableHandle {
-  implicit val codec: Codec[VariableHandle] = AdsCodecs.udint.xmap(VariableHandle.apply, _.value)
-}
-
-case class NotificationHandle(value: Long) extends AnyVal
