@@ -83,7 +83,7 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
           .map(decodeResult => AdsNotification(decodeResult.value, sample.timestamp))
       }
 
-  val adsStateCodec: Codec[AdsState] = AdsCodecs.int.xmap[AdsState](AdsState, _.value)
+  val adsStateCodec: Codec[AdsState] = AdsCodecs.int.xmap(AdsState.values(_), AdsState.indexOf(_).toShort)
 
   private def notificationsFor[T](indexGroup: Long, indexOffset: Long, codec: Codec[T]): Observable[AdsNotification[T]] =
     withNotificationHandle(indexGroup, indexOffset, codec)(notificationsForHandle(_, codec))

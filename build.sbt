@@ -12,7 +12,7 @@ lazy val root = (project in file(".")).
       scalaTest % Test,
       "io.monix" %% "monix-nio" % "0.0.3",
       "io.monix" %% "monix" % "3.0.0-RC1",
-// https://mvnrepository.com/artifact/org.scodec/scodec-bits
+      "com.beachape" %% "enumeratum" % "1.5.13",
       "org.scodec" %% "scodec-bits" % "1.1.5",
       "org.scodec" %% "scodec-core" % "1.10.3"
 

@@ -166,8 +166,6 @@ case class AdsNotification[T](value: T, timestamp: Instant)
 
 case class AdsDeviceInfo(majorVersion: Byte, minorVersion: Byte, versionBuild: Short, deviceName: String)
 
-case class AdsState(value: Short) extends AnyVal
-
 sealed trait AdsTransmissionMode
 
 object AdsTransmissionMode {
