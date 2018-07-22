@@ -18,13 +18,14 @@ import scodec.bits.{BitVector, ByteVector}
 import scodec.{Attempt, Codec}
 import shapeless.HList
 
-import scala.annotation.tailrec
 import scala.reflect.ClassTag
 
-case class AdsNotificationSampleWithTimestamp(handle: Long, timestamp: Instant, data: ByteVector)
+case class AdsNotificationSampleWithTimestamp(handle: Long, timestamp: Instant, data: BitVector)
 
 /**
-  * Exposes individual ADS commands as Tasks and all device notifications as an Observable
+  * Responsible for encoding and executing single ADS commands and decoding their response
+  *
+  * Also provides all device notifications as an Observable
   *
   * An inner implementation layer of [[AdsClient]]
   *
@@ -75,12 +76,12 @@ class AdsCommandClient(settings: AdsConnectionSettings, socketClient: AsyncSocke
       AdsDeleteDeviceNotificationCommand(notificationHandle.value)
     }.map(_ => ())
 
-  def writeToVariable(variableHandle: VariableHandle, value: ByteVector): Task[Unit] =
+  def writeToVariable(variableHandle: VariableHandle, value: BitVector): Task[Unit] =
     runCommand[AdsWriteCommandResponse] {
       AdsWriteCommand(indexGroup = IndexGroups.ReadWriteSymValByHandle, indexOffset = variableHandle.value, values = value)
     }.map(_ => ())
 
-  def read(indexGroup: Long, indexOffset: Long, size: Long): Task[ByteVector] =
+  def read(indexGroup: Long, indexOffset: Long, size: Long): Task[BitVector] =
     for {
       command <- readCommand(indexGroup, indexOffset, size).toTask
       response <- runCommand[AdsReadCommandResponse](command)
@@ -162,12 +163,6 @@ class AdsCommandClient(settings: AdsConnectionSettings, socketClient: AsyncSocke
           Observable.raiseError(ex)
       })
       .map(_.value)
-      .doOnNext(p => println(s"Received AMS packet type ${p.header.commandId}"))
-      .doOnError(e => println(s"Error in receive packets: ${e}"))
-      .doOnTerminate(_.foreach { ex =>
-        println(s"Received packets completed with exception ${ex.getMessage}")
-        ex.printStackTrace()
-      })
       .publish
 
   receivedPackets.connect()
@@ -194,12 +189,12 @@ object AdsCommandClient extends AdsCommandCodecs {
   def getVariableHandleCommand(varName: String): Attempt[AdsWriteReadCommand] =
     for {
       encodedVarName <- AdsCodecs.string.encode(varName)
-    } yield AdsWriteReadCommand(indexGroup = IndexGroups.GetSymHandleByName, indexOffset = 0x00000000, readLength = 4, values = encodedVarName.toByteVector)
+    } yield AdsWriteReadCommand(indexGroup = IndexGroups.GetSymHandleByName, indexOffset = 0x00000000, readLength = 4, values = encodedVarName)
 
   def releaseVariableHandleCommand(handle: VariableHandle): Attempt[AdsWriteCommand] =
     for {
       encodedHandle <- Codec[VariableHandle].encode(handle)
-    } yield AdsWriteCommand(indexGroup = IndexGroups.ReleaseSymHandle, indexOffset = 0x00000000, values = encodedHandle.toByteVector)
+    } yield AdsWriteCommand(indexGroup = IndexGroups.ReleaseSymHandle, indexOffset = 0x00000000, values = encodedHandle)
 
   def readVariableCommand(handle: VariableHandle, size: Long): Attempt[AdsReadCommand] =
     readCommand(IndexGroups.ReadWriteSymValByHandle, handle.value, size)
@@ -209,7 +204,7 @@ object AdsCommandClient extends AdsCommandCodecs {
       AdsReadCommand(indexGroup, indexOffset, readLength = size)
     }
 
-  def writeVariableCommand(handle: VariableHandle, value: ByteVector): Attempt[AdsWriteCommand] =
+  def writeVariableCommand(handle: VariableHandle, value: BitVector): Attempt[AdsWriteCommand] =
     Attempt.successful {
       AdsWriteCommand(IndexGroups.ReadWriteSymValByHandle, indexOffset = handle.value, values = value)
     }
@@ -217,7 +212,7 @@ object AdsCommandClient extends AdsCommandCodecs {
   def createVariableHandlesCommand(variables: Seq[String]): Attempt[AdsSumWriteReadCommand] =
     for {
       encodedVarNames <- variables.map(AdsCodecs.string.encode).sequence
-      commands = encodedVarNames.map(_.toByteVector).map(AdsWriteReadCommand(IndexGroups.GetSymHandleByName, 0x00000000, 4, _))
+      commands = encodedVarNames.map(AdsWriteReadCommand(IndexGroups.GetSymHandleByName, indexOffset = 0x00000000, readLength = 4, _))
     } yield AdsSumWriteReadCommand(commands)
 
   def readVariablesCommand(handlesAndLengths: Seq[(VariableHandle, Long)]): Attempt[AdsSumReadCommand] =
@@ -228,11 +223,10 @@ object AdsCommandClient extends AdsCommandCodecs {
     } yield AdsSumReadCommand(subCommands)
 
   def writeVariablesCommand[T <: HList](handlesAndLengths: Seq[(VariableHandle, Long)], codec: Codec[T], value: T): Attempt[AdsSumWriteCommand] = {
-    val handles = handlesAndLengths.map(_._1)
-    val lengths = handlesAndLengths.map(_._2)
+    val (handles, lengthsInBits) = handlesAndLengths.unzip
     for {
-      encodedValue <- codec.encode(value).map(_.toByteVector)
-      encodedValues = splitByteVectorAtPositions(encodedValue, lengths.toList)
+      encodedValue <- codec.encode(value)
+      encodedValues = splitBitVectorAtPositions(encodedValue, lengthsInBits.toList)
 
       subCommands <- handles.zip(encodedValues).map((writeVariableCommand _).tupled).sequence
     } yield AdsSumWriteCommand(subCommands, encodedValue)
@@ -241,19 +235,15 @@ object AdsCommandClient extends AdsCommandCodecs {
   def releaseHandlesCommand(handles: Seq[VariableHandle]): Attempt[AdsSumWriteCommand] =
     for {
       subCommands <- handles.map(releaseVariableHandleCommand).sequence
-      values = ByteVector.concat(subCommands.map(_.values))
+      values = BitVector.concat(subCommands.map(_.values))
     } yield AdsSumWriteCommand(subCommands, values)
 
-  @tailrec
-  def splitByteVectorAtPositions(remaining: ByteVector, lengthsInBits: List[Long], acc: List[ByteVector] = List.empty): List[ByteVector] = {
-    import scala.collection.immutable.::
-    lengthsInBits match {
-      case Nil => acc
-      case l :: ls =>
-        val (value, newRemaining) = remaining.splitAt(l / 8)
-        splitByteVectorAtPositions(newRemaining, ls, acc :+ value)
-    }
-  }
+  def splitBitVectorAtPositions(bitVector: BitVector, lengthsInBits: List[Long]): List[BitVector] =
+    lengthsInBits.foldLeft((bitVector, List.empty[BitVector])) { case ((remaining, acc), length) =>
+      val (value, newRemaining) = remaining.splitAt(length)
+      (newRemaining, acc :+ value)
+    }._2
+
 
   def keepSecond[T, U](first: T, second: U): U = second
 }

@@ -1,7 +1,7 @@
 package com.vroste.adsclient.internal
 
 import com.vroste.adsclient.AdsTransmissionMode
-import scodec.bits.ByteVector
+import scodec.bits.BitVector
 
 /**
   * Commands to the ADS server
@@ -12,9 +12,9 @@ object AdsCommand {
 
   case class AdsReadCommand(indexGroup: Long, indexOffset: Long, readLength: Long) extends AdsCommand
 
-  case class AdsWriteCommand(indexGroup: Long, indexOffset: Long, values: ByteVector) extends AdsCommand
+  case class AdsWriteCommand(indexGroup: Long, indexOffset: Long, values: BitVector) extends AdsCommand
 
-  case class AdsWriteReadCommand(indexGroup: Long, indexOffset: Long, readLength: Long, values: ByteVector)
+  case class AdsWriteReadCommand(indexGroup: Long, indexOffset: Long, readLength: Long, values: BitVector)
     extends AdsCommand
 
   case class AdsAddDeviceNotificationCommand(indexGroup: Long,

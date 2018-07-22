@@ -29,4 +29,8 @@ object CodecUtil {
       }
   }
 
+  implicit class BitVectorExtensions(val bitVector: BitVector) extends AnyVal {
+    def lengthInBytes = bitVector.length / 8
+  }
+
 }

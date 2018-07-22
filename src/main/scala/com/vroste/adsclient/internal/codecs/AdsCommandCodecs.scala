@@ -25,11 +25,11 @@ trait AdsCommandCodecs {
       .as[AdsReadCommand]
 
   implicit val writeCommandCodec: Codec[AdsWriteCommand] =
-    (uint32L :: uint32L :: variableSizeBytesLong(uint32L, bytes))
+    (uint32L :: uint32L :: variableSizeBytesLong(uint32L, bits))
       .as[AdsWriteCommand]
 
   implicit val writeReadCommandCodec: Codec[AdsWriteReadCommand] =
-    (uint32L :: uint32L :: uint32L :: variableSizeBytesLong(uint32L, bytes)).as[AdsWriteReadCommand]
+    (uint32L :: uint32L :: uint32L :: variableSizeBytesLong(uint32L, bits)).as[AdsWriteReadCommand]
 
   implicit val addDeviceNotificationCommandCodec: Codec[AdsAddDeviceNotificationCommand] =
     (uint32L ~ uint32L ~ uint32L ~ Codec[AdsTransmissionMode] ~ uint32L ~ uint32L <~ ignore(16 * 8))
