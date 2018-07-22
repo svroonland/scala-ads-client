@@ -2,7 +2,7 @@ package com.vroste.adsclient.internal
 
 import java.time.Instant
 
-import scodec.bits.ByteVector
+import scodec.bits.BitVector
 import scodec.{Attempt, Decoder}
 
 /**
@@ -22,10 +22,10 @@ object AdsResponse {
 
   case class AdsWriteCommandResponse(errorCode: Long) extends AdsResponse
 
-  case class AdsReadCommandResponse(errorCode: Long, data: ByteVector) extends AdsResponse
+  case class AdsReadCommandResponse(errorCode: Long, data: BitVector) extends AdsResponse
 
-  case class AdsWriteReadCommandResponse(errorCode: Long, data: ByteVector) extends AdsResponse {
-    def decode[T: Decoder]: Attempt[T] = Decoder[T].decodeValue(data.toBitVector)
+  case class AdsWriteReadCommandResponse(errorCode: Long, data: BitVector) extends AdsResponse {
+    def decode[T: Decoder]: Attempt[T] = Decoder[T].decodeValue(data)
   }
 
   //  case class AdsReadDeviceInfoCommandResponse(errorCode: Int, deviceInfo: AdsDeviceInfo)      extends AdsResponse
@@ -36,4 +36,4 @@ object AdsResponse {
 }
 
 case class AdsStampHeader(timestamp: Instant, samples: List[AdsNotificationSample])
-case class AdsNotificationSample(handle: Long, data: ByteVector)
+case class AdsNotificationSample(handle: Long, data: BitVector)

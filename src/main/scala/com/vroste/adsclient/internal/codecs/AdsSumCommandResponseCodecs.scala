@@ -2,7 +2,7 @@ package com.vroste.adsclient.internal.codecs
 
 import com.vroste.adsclient.internal.AdsResponse.AdsWriteReadCommandResponse
 import com.vroste.adsclient.internal.util.CodecUtil.SequenceDecoders
-import scodec.bits.ByteVector
+import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
 import scodec.{Codec, Decoder}
 
@@ -20,15 +20,14 @@ trait AdsSumCommandResponseCodecs extends AdsResponseCodecs {
     * We map it to a list of regular write read command responses, but that takes some trickery to get right
     */
   def adsSumWriteReadCommandResponseDecoder(nrValues: Int): Decoder[AdsSumWriteReadCommandResponse] = {
-    val errorsAndValuesCodec: Decoder[Seq[(Long, ByteVector)]] =
+    val errorsAndValuesCodec: Decoder[Seq[(Long, BitVector)]] =
       listOfN(provide(nrValues), ("errorCode" | errorCodeCodec) ~ ("length" | uint32L))
         .withContext("WriteRead response error codes and lengths")
-        .flatMap[Seq[(Long, ByteVector)]] { errorCodesAndLengths =>
-        val errorCodes = errorCodesAndLengths.map(_._1)
-        val lengths = errorCodesAndLengths.map(_._2.toInt)
+        .flatMap[Seq[(Long, BitVector)]] { errorCodesAndLengths =>
+        val (errorCodes, lengths) = errorCodesAndLengths.unzip
 
         val valueCodecs = lengths.zipWithIndex.map { case (length, index) =>
-          bytes(length).withContext(s"WriteRead sub response value ${index + 1}")
+          bits(length.toInt * 8).withContext(s"WriteRead sub response value ${index + 1}")
         }
 
         valueCodecs.sequence.map(errorCodes zip _)

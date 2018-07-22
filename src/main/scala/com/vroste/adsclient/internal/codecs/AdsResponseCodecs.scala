@@ -1,7 +1,7 @@
 package com.vroste.adsclient.internal.codecs
 
 import com.vroste.adsclient.internal._
-import scodec.codecs.{StringEnrichedWithCodecContextSupport, bytes, listOfN, uint32L, variableSizeBytesLong}
+import scodec.codecs.{StringEnrichedWithCodecContextSupport, bits, listOfN, uint32L, variableSizeBytesLong}
 import scodec.{Attempt, Codec, Err}
 
 trait AdsResponseCodecs {
@@ -12,10 +12,10 @@ trait AdsResponseCodecs {
   val uint32LAsInt = uint32L.xmap[Int](_.toInt, _.toLong)
 
   val adsReadCommandResponseCodec: Codec[AdsReadCommandResponse] =
-    (errorCodeCodec :: variableSizeBytesLong("length" | uint32L, bytes)).as
+    (errorCodeCodec :: variableSizeBytesLong("length" | uint32L, bits)).as
 
   val adsWriteReadCommandResponseCodec: Codec[AdsWriteReadCommandResponse] =
-    (errorCodeCodec :: variableSizeBytesLong("length" | uint32L, bytes)).as
+    (errorCodeCodec :: variableSizeBytesLong("length" | uint32L, bits)).as
 
   val adsWriteCommandResponseCodec: Codec[AdsWriteCommandResponse] =
     errorCodeCodec.as
@@ -27,7 +27,7 @@ trait AdsResponseCodecs {
     errorCodeCodec.as
 
   val adsNotificationSampleCodec: Codec[AdsNotificationSample] =
-    (uint32L :: variableSizeBytesLong("samplesSize" | uint32L, bytes)).as
+    (uint32L :: variableSizeBytesLong("samplesSize" | uint32L, bits)).as
 
   val adsStampHeaderCodec: Codec[AdsStampHeader] =
     (WindowsFiletime.codec :: listOfN("samples" | uint32LAsInt, adsNotificationSampleCodec)).as

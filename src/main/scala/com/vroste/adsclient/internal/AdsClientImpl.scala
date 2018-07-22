@@ -7,7 +7,6 @@ import com.vroste.adsclient.internal.util.AttemptUtil._
 import com.vroste.adsclient.internal.util.{ConsumerUtil, ObservableUtil}
 import monix.eval.Task
 import monix.reactive.{Consumer, Observable}
-import scodec.bits.BitVector
 import scodec.{Codec, Decoder}
 import shapeless.HList
 
@@ -30,8 +29,8 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
   def read[T](indexGroup: Long, indexOffset: Long, codec: Codec[T]): Task[T] =
     for {
       data <- client.read(indexGroup, indexOffset, sizeInBytes(codec))
-      decoded <- codec.decode(BitVector(data)).toTask
-    } yield decoded.value
+      decoded <- codec.decodeValue(data).toTask
+    } yield decoded
 
   override def read[T <: HList](command: VariableList[T]): Task[T] =
     createHandles(command).bracket(read(command, _))(releaseHandles)
@@ -41,7 +40,7 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
       sumCommand <- readVariablesCommand(handles.zip(command.sizes)).toTask
       adsCommand <- sumCommand.toAdsCommand.toTask
       response <- client.runCommand[AdsWriteReadCommandResponse](adsCommand)
-      errorCodesAndValue <- sumReadResponseDecoder(command.codec, command.variables.size).decodeValue(response.data.toBitVector).toTask
+      errorCodesAndValue <- sumReadResponseDecoder(command.codec, command.variables.size).decodeValue(response.data).toTask
       _ <- client.checkErrorCodes(errorCodesAndValue._1)
     } yield errorCodesAndValue._2
 
@@ -50,7 +49,6 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
 
   override def write[T](handle: VariableHandle, value: T, codec: Codec[T]): Task[Unit] =
     codec.encode(value).toTask
-      .map(_.toByteVector)
       .flatMap(client.writeToVariable(handle, _))
 
   override def write[T <: HList](command: VariableList[T], values: T): Task[Unit] =
@@ -61,7 +59,7 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
       sumCommand <- writeVariablesCommand(handles.zip(command.sizes), command.codec, values).toTask
       adsCommand <- sumCommand.toAdsCommand.toTask
       response <- client.runCommand[AdsWriteReadCommandResponse](adsCommand)
-      errorCodes <- sumWriteResponseDecoder.decodeValue(response.data.toBitVector).toTask
+      errorCodes <- sumWriteResponseDecoder.decodeValue(response.data).toTask
       _ <- client.checkErrorCodes(errorCodes)
     } yield ()
 
@@ -82,8 +80,8 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
     client.notificationSamples
       .filter(_.handle == handle.value)
       .flatMap { sample =>
-        codec.decode(BitVector(sample.data)).toObservable
-          .map(decodeResult => AdsNotification(decodeResult.value, sample.timestamp))
+        codec.decodeValue(sample.data).toObservable
+          .map(AdsNotification(_, sample.timestamp))
       }
 
   private def notificationsFor[T](indexGroup: Long, indexOffset: Long, codec: Codec[T]): Observable[AdsNotification[T]] =
@@ -175,7 +173,7 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
       sumCommand <- createVariableHandlesCommand(command.variables).toTask
       adsCommand <- sumCommand.toAdsCommand.toTask
       response <- client.runCommand[AdsWriteReadCommandResponse](adsCommand)
-      errorCodesAndHandles <- sumWriteReadResponseDecoder[VariableHandle](command.variables.size).decodeValue(response.data.toBitVector).toTask
+      errorCodesAndHandles <- sumWriteReadResponseDecoder[VariableHandle](command.variables.size).decodeValue(response.data).toTask
       errorCodes = errorCodesAndHandles.map(_._1)
       _ <- client.checkErrorCodes(errorCodes)
     } yield errorCodesAndHandles.map(_._2)
@@ -185,7 +183,7 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
       sumCommand <- releaseHandlesCommand(handles).toTask
       adsCommand <- sumCommand.toAdsCommand.toTask
       response <- client.runCommand[AdsWriteReadCommandResponse](adsCommand)
-      _ <- sumWriteResponseDecoder.decodeValue(response.data.toBitVector).toTask
+      _ <- sumWriteResponseDecoder.decodeValue(response.data).toTask
     } yield ()
 
   private def acquireResource[T](t: Task[T]): Task[T] =
@@ -205,7 +203,7 @@ object AdsClientImpl extends AdsSumCommandResponseCodecs {
     adsSumWriteReadCommandResponseDecoder(nrValues)
       .emap { response =>
         val responseDecoders = response.responses.map { r =>
-          val decodedData = decoderT.decodeValue(r.data.toBitVector)
+          val decodedData = decoderT.decodeValue(r.data)
           decodedData.map((r.errorCode, _))
         }
 

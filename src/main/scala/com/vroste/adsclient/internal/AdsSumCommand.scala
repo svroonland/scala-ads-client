@@ -1,11 +1,10 @@
 package com.vroste.adsclient.internal
 
+import com.vroste.adsclient.internal.AdsCommand._
 import com.vroste.adsclient.internal.codecs.AdsSumCommandCodecs
-import scodec.bits.ByteVector
-import scodec.{Attempt, Codec}
+import scodec.bits.BitVector
 import scodec.codecs._
-
-import AdsCommand._
+import scodec.{Attempt, Codec}
 
 // SUM COMMANDS
 // Sum commands are basically a list of commands of a type (read, write or write+read).
@@ -23,23 +22,23 @@ object AdsSumCommand extends AdsSumCommandCodecs {
       } yield AdsWriteReadCommand(
         indexGroup = IndexGroups.SumRead,
         indexOffset = commands.length,
-        values = requestPartsBits.toByteVector,
+        values = requestPartsBits,
         readLength = commands.map(_.readLength).sum + errorCodeSize * commands.length
       )
     }
   }
 
-  case class AdsSumWriteCommand(commands: Seq[AdsWriteCommand], values: ByteVector) {
+  case class AdsSumWriteCommand(commands: Seq[AdsWriteCommand], values: BitVector) {
     def toAdsCommand: Attempt[AdsWriteReadCommand] = {
       val requestParts = commands.map(c => SumWriteRequestPart(c.indexGroup, c.indexOffset, c.values.length))
-      val valueBytes = ByteVector.concat(commands.map(_.values))
+      val valueBits = BitVector.concat(commands.map(_.values))
 
       for {
         requestPartsBits <- list(Codec[SumWriteRequestPart]).encode(requestParts.toList)
       } yield AdsWriteReadCommand(
         indexGroup = IndexGroups.SumWrite,
         indexOffset = commands.length,
-        values = requestPartsBits.toByteVector ++ valueBytes,
+        values = requestPartsBits ++ valueBits,
         readLength = errorCodeSize * commands.length
       )
     }
@@ -50,7 +49,7 @@ object AdsSumCommand extends AdsSumCommandCodecs {
   case class AdsSumWriteReadCommand(commands: Seq[AdsWriteReadCommand]) {
     def toAdsCommand: Attempt[AdsWriteReadCommand] = {
       val requestParts = commands.map(c => SumReadWriteRequestPart(c.indexGroup, c.indexOffset, c.readLength, c.values.length))
-      val valueBytes = ByteVector.concat(commands.map(_.values))
+      val valueBits = BitVector.concat(commands.map(_.values))
 
       for {
         requestPartsBits <- list(Codec[SumReadWriteRequestPart]).encode(requestParts.toList)
@@ -59,7 +58,7 @@ object AdsSumCommand extends AdsSumCommandCodecs {
         indexOffset = commands.length,
         // Result + error code + data for each sub command
         readLength = commands.map(_.readLength + resultLengthSize + errorCodeSize).sum,
-        values = requestPartsBits.toByteVector ++ valueBytes
+        values = requestPartsBits ++ valueBits
       )
     }
   }
