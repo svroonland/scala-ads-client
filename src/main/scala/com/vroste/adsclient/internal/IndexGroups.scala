@@ -7,4 +7,6 @@ object IndexGroups {
   val SumRead = 0xF080
   val SumWrite = 0xF081
   val SumWriteRead = 0xF082
+
+  val AdsState = 0xF100
 }

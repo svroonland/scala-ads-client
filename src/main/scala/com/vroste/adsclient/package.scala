@@ -11,6 +11,8 @@ import enumeratum._
   * Import com.vroste.adsclient._ to get access to all data types needed for working with the client
   */
 package object adsclient extends AdsCodecs {
+  type ErrorCode = Long
+
   case class AmsNetId(value: String) extends AnyVal {
     def asString: String = value
   }

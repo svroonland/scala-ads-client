@@ -1,8 +1,10 @@
 package com.vroste.adsclient.internal.codecs
 
+import com.vroste.adsclient.ErrorCode
 import com.vroste.adsclient.internal.AdsResponse.AdsWriteReadCommandResponse
+import com.vroste.adsclient.internal.util.AttemptUtil._
 import com.vroste.adsclient.internal.util.CodecUtil.SequenceDecoders
-import scodec.bits.{BitVector, ByteVector}
+import scodec.bits.BitVector
 import scodec.codecs._
 import scodec.{Codec, Decoder}
 
@@ -23,7 +25,7 @@ trait AdsSumCommandResponseCodecs extends AdsResponseCodecs {
     val errorsAndValuesCodec: Decoder[Seq[(Long, BitVector)]] =
       listOfN(provide(nrValues), ("errorCode" | errorCodeCodec) ~ ("length" | uint32L))
         .withContext("WriteRead response error codes and lengths")
-        .flatMap[Seq[(Long, BitVector)]] { errorCodesAndLengths =>
+        .flatMap[Seq[(ErrorCode, BitVector)]] { errorCodesAndLengths =>
         val (errorCodes, lengths) = errorCodesAndLengths.unzip
 
         val valueCodecs = lengths.zipWithIndex.map { case (length, index) =>
@@ -36,6 +38,29 @@ trait AdsSumCommandResponseCodecs extends AdsResponseCodecs {
     errorsAndValuesCodec
       .map(_.map(AdsWriteReadCommandResponse.tupled).toList)
       .map(AdsSumWriteReadCommandResponse)
+  }
+
+  /**
+    * Decodes the payload of a SUM write read response as a sequence of T's along with their error code
+    *
+    * @param nrValues Expected number of values
+    * @param decoderT Decoder for a single value
+    */
+  def sumWriteReadResponsePayloadDecoder[T](nrValues: Int)(implicit decoderT: Decoder[T]): Decoder[Seq[(ErrorCode, T)]] =
+    adsSumWriteReadCommandResponseDecoder(nrValues)
+      .emap { response =>
+        val responseDecoders = response.responses.map { r =>
+          val decodedData = decoderT.decodeValue(r.data)
+          decodedData.map((r.errorCode, _))
+        }
+
+        responseDecoders.sequence
+      }
+
+  def sumReadResponsePayloadDecoder[T](codec: Codec[T], nrValues: Int): Decoder[(List[ErrorCode], T)] = {
+    val errorCodesCodec = listOfN(provide(nrValues), AdsResponseCodecs.errorCodeCodec)
+
+    (errorCodesCodec ~ codec).asDecoder
   }
 
   /**

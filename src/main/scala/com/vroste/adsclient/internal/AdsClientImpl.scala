@@ -40,7 +40,7 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
       sumCommand <- readVariablesCommand(handles.zip(command.sizes)).toTask
       adsCommand <- sumCommand.toAdsCommand.toTask
       response <- client.runCommand[AdsWriteReadCommandResponse](adsCommand)
-      errorCodesAndValue <- sumReadResponseDecoder(command.codec, command.variables.size).decodeValue(response.data).toTask
+      errorCodesAndValue <- sumReadResponsePayloadDecoder(command.codec, command.variables.size).decodeValue(response.data).toTask
       _ <- client.checkErrorCodes(errorCodesAndValue._1)
     } yield errorCodesAndValue._2
 
@@ -59,7 +59,7 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
       sumCommand <- writeVariablesCommand(handles.zip(command.sizes), command.codec, values).toTask
       adsCommand <- sumCommand.toAdsCommand.toTask
       response <- client.runCommand[AdsWriteReadCommandResponse](adsCommand)
-      errorCodes <- sumWriteResponseDecoder.decodeValue(response.data).toTask
+      errorCodes <- adsSumWriteCommandResponseCodec.decodeValue(response.data).map(_.errorCodes).toTask
       _ <- client.checkErrorCodes(errorCodes)
     } yield ()
 
@@ -147,10 +147,10 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
   }
 
   override def stateChanges: Observable[AdsNotification[AdsState]] =
-    notificationsFor(indexGroup = 0x0000F100, indexOffset = 0, codec = adsStateCodec)
+    notificationsFor(IndexGroups.AdsState, indexOffset = 0, codec = adsStateCodec)
 
   override def readState: Task[AdsState] =
-    read(indexGroup = 0xF100, indexOffset = 0, codec = adsStateCodec)
+    read(IndexGroups.AdsState, indexOffset = 0, codec = adsStateCodec)
 
   /**
     * Closes the socket connection after waiting for any acquired resources to be released
@@ -159,12 +159,9 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
     */
   override def close(): Task[Unit] =
     for {
-      //      _ <- Task.eval(println("Waiting for outstanding resources to close before closing"))
       _ <- resourcesInUse.awaitZero
-      //      _ <- Task.eval(println("Closing client"))
       _ <- client.close()
     } yield ()
-
 
   // TODO should  these be moved to the client?
 
@@ -173,7 +170,8 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
       sumCommand <- createVariableHandlesCommand(command.variables).toTask
       adsCommand <- sumCommand.toAdsCommand.toTask
       response <- client.runCommand[AdsWriteReadCommandResponse](adsCommand)
-      errorCodesAndHandles <- sumWriteReadResponseDecoder[VariableHandle](command.variables.size).decodeValue(response.data).toTask
+      errorCodesAndHandles <- sumWriteReadResponsePayloadDecoder[VariableHandle](command.variables.size)
+        .decodeValue(response.data).toTask
       errorCodes = errorCodesAndHandles.map(_._1)
       _ <- client.checkErrorCodes(errorCodes)
     } yield errorCodesAndHandles.map(_._2)
@@ -183,7 +181,8 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
       sumCommand <- releaseHandlesCommand(handles).toTask
       adsCommand <- sumCommand.toAdsCommand.toTask
       response <- client.runCommand[AdsWriteReadCommandResponse](adsCommand)
-      _ <- sumWriteResponseDecoder.decodeValue(response.data).toTask
+      errorCodes <- adsSumWriteCommandResponseCodec.decodeValue(response.data).map(_.errorCodes).toTask
+      _ <- client.checkErrorCodes(errorCodes)
     } yield ()
 
   private def acquireResource[T](t: Task[T]): Task[T] =
@@ -195,30 +194,7 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
 
 object AdsClientImpl extends AdsSumCommandResponseCodecs {
 
-  import AdsCommandCodecs.variableHandleCodec
-
-  import scodec.codecs.{listOfN, provide}
-
-  def sumWriteReadResponseDecoder[T](nrValues: Int)(implicit decoderT: Decoder[T]): Decoder[Seq[(Long, T)]] =
-    adsSumWriteReadCommandResponseDecoder(nrValues)
-      .emap { response =>
-        val responseDecoders = response.responses.map { r =>
-          val decodedData = decoderT.decodeValue(r.data)
-          decodedData.map((r.errorCode, _))
-        }
-
-        responseDecoders.sequence
-      }
-
-  def sumReadResponseDecoder[T](codec: Codec[T], nrValues: Int): Decoder[(List[Long], T)] = {
-    val errorCodesCodec = listOfN(provide(nrValues), AdsResponseCodecs.errorCodeCodec)
-
-    (errorCodesCodec ~ codec).asDecoder
-  }
-
-  def sumWriteResponseDecoder: Decoder[List[Long]] =
-    Decoder[AdsSumWriteCommandResponse]
-      .map(_.responses.map(_.errorCode))
+//  import AdsCommandCodecs.variableHandleCodec
 
   def sizeInBytes(codec: Codec[_]): Long =
     codec.sizeBound.upperBound.getOrElse(codec.sizeBound.lowerBound) / 8
