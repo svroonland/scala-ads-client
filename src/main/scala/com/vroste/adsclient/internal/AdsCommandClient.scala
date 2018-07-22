@@ -223,10 +223,10 @@ object AdsCommandClient extends AdsCommandCodecs {
     } yield AdsSumReadCommand(subCommands)
 
   def writeVariablesCommand[T <: HList](handlesAndLengths: Seq[(VariableHandle, Long)], codec: Codec[T], value: T): Attempt[AdsSumWriteCommand] = {
-    val (handles, lengths) = handlesAndLengths.unzip
+    val (handles, lengthsInBits) = handlesAndLengths.unzip
     for {
       encodedValue <- codec.encode(value)
-      encodedValues = splitBitVectorAtPositions(encodedValue, lengths.toList)
+      encodedValues = splitBitVectorAtPositions(encodedValue, lengthsInBits.toList)
 
       subCommands <- handles.zip(encodedValues).map((writeVariableCommand _).tupled).sequence
     } yield AdsSumWriteCommand(subCommands, encodedValue)

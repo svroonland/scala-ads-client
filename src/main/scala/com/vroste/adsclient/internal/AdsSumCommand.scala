@@ -5,6 +5,7 @@ import com.vroste.adsclient.internal.codecs.AdsSumCommandCodecs
 import scodec.bits.BitVector
 import scodec.codecs._
 import scodec.{Attempt, Codec}
+import com.vroste.adsclient.internal.util.CodecUtil.BitVectorExtensions
 
 // SUM COMMANDS
 // Sum commands are basically a list of commands of a type (read, write or write+read).
@@ -30,7 +31,7 @@ object AdsSumCommand extends AdsSumCommandCodecs {
 
   case class AdsSumWriteCommand(commands: Seq[AdsWriteCommand], values: BitVector) {
     def toAdsCommand: Attempt[AdsWriteReadCommand] = {
-      val requestParts = commands.map(c => SumWriteRequestPart(c.indexGroup, c.indexOffset, c.values.length))
+      val requestParts = commands.map(c => SumWriteRequestPart(c.indexGroup, c.indexOffset, length = c.values.lengthInBytes))
       val valueBits = BitVector.concat(commands.map(_.values))
 
       for {
@@ -48,7 +49,7 @@ object AdsSumCommand extends AdsSumCommandCodecs {
   // encoded as the payload. The values to be written are encoded at the end
   case class AdsSumWriteReadCommand(commands: Seq[AdsWriteReadCommand]) {
     def toAdsCommand: Attempt[AdsWriteReadCommand] = {
-      val requestParts = commands.map(c => SumReadWriteRequestPart(c.indexGroup, c.indexOffset, c.readLength, c.values.length))
+      val requestParts = commands.map(c => SumReadWriteRequestPart(c.indexGroup, c.indexOffset, c.readLength, c.values.lengthInBytes))
       val valueBits = BitVector.concat(commands.map(_.values))
 
       for {
