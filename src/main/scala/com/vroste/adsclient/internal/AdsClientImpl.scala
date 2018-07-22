@@ -19,18 +19,17 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
   import internal.codecs.AdsCommandCodecs.variableHandleCodec
 
   // For proper shutdown, we need to keep track of any cleanup commands that are pending and need the ADS client
-  val resourcesToBeReleased: CountingSemaphore = new CountingSemaphore
+  val resourcesInUse: CountingSemaphore = new CountingSemaphore
 
   override def read[T](varName: String, codec: Codec[T]): Task[T] =
     withVariableHandle(varName)(read(_, codec))
 
   override def read[T](handle: VariableHandle, codec: Codec[T]): Task[T] =
-    read(indexGroup = IndexGroups.ReadWriteSymValByHandle, indexOffset = handle.value, codec)
+    read(IndexGroups.ReadWriteSymValByHandle, indexOffset = handle.value, codec)
 
   def read[T](indexGroup: Long, indexOffset: Long, codec: Codec[T]): Task[T] =
     for {
-      size <- Task.pure(codec.sizeBound.upperBound.getOrElse(codec.sizeBound.lowerBound) / 8)
-      data <- client.read(indexGroup, indexOffset, size)
+      data <- client.read(indexGroup, indexOffset, sizeInBytes(codec))
       decoded <- codec.decode(BitVector(data)).toTask
     } yield decoded.value
 
@@ -95,15 +94,8 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
     * when subscribed creates a notification handle and when unsubscribed or completed deletes the notification handle
     */
   def withNotificationHandle[U](varName: String, codec: Codec[_])(f: NotificationHandle => Observable[U]): Observable[U] = {
-    val acquire = for {
-      handle <- client.getVariableHandle(varName)
-      _ <- resourcesToBeReleased.increment
-    } yield handle
-
-    def release(handle: VariableHandle) = for {
-      _ <- client.releaseVariableHandle(handle)
-      _ <- resourcesToBeReleased.decrement
-    } yield ()
+    val acquire = acquireResource(client.getVariableHandle(varName))
+    val release = client.releaseVariableHandle _ andThen releaseResource
 
     ObservableUtil.bracket(acquire) { varHandle =>
       withNotificationHandle(IndexGroups.ReadWriteSymValByHandle, varHandle.value, codec)(f)
@@ -111,18 +103,8 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
   }
 
   def withNotificationHandle[U](indexGroup: Long, indexOffset: Long, codec: Codec[_])(f: NotificationHandle => Observable[U]): Observable[U] = {
-    val readLength = codec.sizeBound.upperBound.getOrElse(codec.sizeBound.lowerBound) / 8
-
-    val acquire = for {
-      notificationHandle <- client.getNotificationHandle(indexGroup, indexOffset, readLength, 0, 100)
-      _ <- resourcesToBeReleased.increment
-    } yield notificationHandle
-
-    def release(notificationHandle: NotificationHandle) =
-      for {
-        _ <- client.deleteNotificationHandle(notificationHandle)
-        _ <- resourcesToBeReleased.decrement
-      } yield ()
+    val acquire = acquireResource(client.getNotificationHandle(indexGroup, indexOffset, sizeInBytes(codec), 0, 100))
+    val release = client.deleteNotificationHandle _ andThen releaseResource
 
     ObservableUtil.bracket(acquire)(f)(release)
   }
@@ -139,33 +121,17 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
     * @return
     */
   override def consumerFor[T](varName: String, codec: Codec[T]): Consumer[T, Unit] = {
-    def before = for {
-      handle <- client.getVariableHandle(varName)
-      _ <- resourcesToBeReleased.increment
-    } yield handle
-
-    def after(handle: VariableHandle) = for {
-      _ <- client.releaseVariableHandle(handle)
-      _ <- resourcesToBeReleased.decrement
-    } yield ()
-
-    ConsumerUtil.bracket[T, VariableHandle](before, after) {
+    ConsumerUtil.bracket[T, VariableHandle](
+      acquire = acquireResource(client.getVariableHandle(varName)),
+      release = client.releaseVariableHandle _ andThen releaseResource) {
       Consumer.foreachTask { case (handle, value) => write(handle, value, codec) }
     }
   }
 
   override def consumerFor[T <: HList](variables: VariableList[T], codec: Codec[T]): Consumer[T, Unit] = {
-    def before = for {
-      handle <- createHandles(variables)
-      _ <- resourcesToBeReleased.increment
-    } yield handle
-
-    def after(handles: Seq[VariableHandle]) = for {
-      _ <- releaseHandles(handles)
-      _ <- resourcesToBeReleased.decrement
-    } yield ()
-
-    ConsumerUtil.bracket[T, Seq[VariableHandle]](before, after) {
+    ConsumerUtil.bracket[T, Seq[VariableHandle]](
+      acquire = acquireResource(createHandles(variables)),
+      release = releaseHandles _ andThen releaseResource) {
       Consumer.foreachTask { case (handles, values) => write(variables, handles, values) }
     }
   }
@@ -176,14 +142,11 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
     * The handle is created before the task is executed and released just before the task completes
     */
   private def withVariableHandle[T](varName: String)(block: VariableHandle => Task[T]): Task[T] = {
-    val acquire = client.getVariableHandle(varName)
-    val release = client.releaseVariableHandle _
+    val acquire = acquireResource(client.getVariableHandle(varName))
+    val release = client.releaseVariableHandle _ andThen releaseResource
 
-    acquire.bracket(varHandle => withResource(block(varHandle)))(release)
+    acquire.bracket(block)(release)
   }
-
-  private def withResource[T](t: Task[T]): Task[T] =
-    resourcesToBeReleased.increment.bracket(_ => t)(_ => resourcesToBeReleased.decrement)
 
   override def stateChanges: Observable[AdsNotification[AdsState]] =
     notificationsFor(indexGroup = 0x0000F100, indexOffset = 0, codec = adsStateCodec)
@@ -199,7 +162,7 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
   override def close(): Task[Unit] =
     for {
       //      _ <- Task.eval(println("Waiting for outstanding resources to close before closing"))
-      _ <- resourcesToBeReleased.awaitZero
+      _ <- resourcesInUse.awaitZero
       //      _ <- Task.eval(println("Closing client"))
       _ <- client.close()
     } yield ()
@@ -225,9 +188,15 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
       _ <- sumWriteResponseDecoder.decodeValue(response.data.toBitVector).toTask
     } yield ()
 
+  private def acquireResource[T](t: Task[T]): Task[T] =
+    t.flatMap(r => resourcesInUse.increment.map(_ => r))
+
+  private def releaseResource[T](t: Task[T]): Task[T] =
+    t.flatMap(r => resourcesInUse.decrement.map(_ => r))
 }
 
 object AdsClientImpl extends AdsSumCommandResponseCodecs {
+
   import AdsCommandCodecs.variableHandleCodec
 
   import scodec.codecs.{listOfN, provide}
@@ -252,4 +221,7 @@ object AdsClientImpl extends AdsSumCommandResponseCodecs {
   def sumWriteResponseDecoder: Decoder[List[Long]] =
     Decoder[AdsSumWriteCommandResponse]
       .map(_.responses.map(_.errorCode))
+
+  def sizeInBytes(codec: Codec[_]): Long =
+    codec.sizeBound.upperBound.getOrElse(codec.sizeBound.lowerBound) / 8
 }
