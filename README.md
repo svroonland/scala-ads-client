@@ -72,7 +72,7 @@ Available codecs are named after the PLC datatype, in the `AdsCodecs` object:
 | `dword` | DWORD         | Long            | 32 bit unsigned integer |
 | `sint`  | SINT          | Int             | 8 bit signed integer       |
 | `usint` | USINT         | Int             | 8 bit unsigned integer      |
-| `int`   | INT           | Int             | 16 bit signed integer      |
+| `int`   | INT           | Short           | 16 bit signed integer      |
 | `uint`  | INT           | Int             | 16 bit unsigned integer       |
 | `dint`  | INT           | Int             | 32 bit signed integer       |
 | `udint`  | INT           | Long             | 32 bit unsigned integer       |
