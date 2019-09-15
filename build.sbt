@@ -11,11 +11,11 @@ lazy val root = (project in file(".")).
     name := "Scala ADS client",
     libraryDependencies ++= Seq(
       scalaTest % Test,
-      "io.monix" %% "monix-nio" % "0.0.3",
-      "io.monix" %% "monix" % "3.0.0-RC2",
+      "dev.zio" %% "zio" % "1.0.0-RC12-1",
+      "dev.zio" %% "zio-streams" % "1.0.0-RC12-1",
+      "dev.zio" %% "zio-nio" % "0.1.3-M6",
       "com.beachape" %% "enumeratum" % "1.5.13",
-      "org.scodec" %% "scodec-bits" % "1.1.5",
-      "org.scodec" %% "scodec-core" % "1.10.3"
-
+      "org.scodec" %% "scodec-bits" % "1.1.12",
+      "org.scodec" %% "scodec-core" % "1.11.4"
     )
   )

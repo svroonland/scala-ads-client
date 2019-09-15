@@ -6,10 +6,11 @@ Beckhoff TwinCAT ADS client for the Scala language
 This is a Scala-idiomatic reactive client for [Beckhoff TwinCAT PLC](http://www.beckhoff.com/TwinCAT/). 
 
 ## Features
-* Get a continuous stream of notifications for PLC variables as Monix [Observable](https://monix.io/docs/3x/reactive/observable.html)s. 
-* Compose and transform Observables to achieve more complex behavior. 
-* Streaming of elements in an Observable to PLC variables
-* Easy reading and writing of custom data types (case classes) to PLC structs
+* Get a continuous stream of notifications for PLC variables as ZIO [Streams](https://zio.dev/docs/datatypes/datatypes_stream). 
+* Compose and transform Streams to achieve more complex behavior. 
+* Automatically closed variable & notification handles via `ZManaged`
+* Streaming writing of values to PLC variables
+* Easy reading and writing of custom data types (case classes) to PLC `STRUCT`s
 * Efficient and typesafe reading and writing of many variables at once using ADS SUM commands
 * Fully non-blocking async IO.
 

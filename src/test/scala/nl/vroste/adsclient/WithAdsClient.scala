@@ -3,13 +3,11 @@ package nl.vroste.adsclient
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.concurrent.ScalaFutures
 import org.scalatest.time.{Millis, Seconds, Span}
+import zio.ZManaged
+import zio.clock.Clock
 
-trait WithAdsClient extends BeforeAndAfterAll with ScalaFutures with TestUtil with MonixSupport { this: BaseSpec =>
+trait WithAdsClient extends ScalaFutures with TestUtil with ZioSupport { this: BaseSpec =>
   implicit val defaultPatience =   PatienceConfig(timeout =  Span(5, Seconds), interval = Span(50, Millis))
 
-  val client = AdsClient.connect(settings).runToFuture.futureValue
-
-  override def afterAll(): Unit = {
-    client.close().runToFuture.futureValue
-  }
+  val clientM: ZManaged[Clock, Exception, AdsClient] = AdsClient.connect(settings)
 }

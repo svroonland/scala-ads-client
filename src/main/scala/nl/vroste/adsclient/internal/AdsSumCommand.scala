@@ -4,8 +4,12 @@ import nl.vroste.adsclient.internal.AdsCommand._
 import nl.vroste.adsclient.internal.codecs.AdsSumCommandCodecs
 import scodec.bits.BitVector
 import scodec.codecs._
-import scodec.{Attempt, Codec}
+import scodec.{ Attempt, Codec }
 import nl.vroste.adsclient.internal.util.CodecUtil.BitVectorExtensions
+
+trait AdsSumCommand {
+  def toAdsCommand: Attempt[AdsWriteReadCommand]
+}
 
 // SUM COMMANDS
 // Sum commands are basically a list of commands of a type (read, write or write+read).
@@ -14,7 +18,7 @@ import nl.vroste.adsclient.internal.util.CodecUtil.BitVectorExtensions
 // for better composability
 object AdsSumCommand extends AdsSumCommandCodecs {
 
-  case class AdsSumReadCommand(commands: Seq[AdsReadCommand]) {
+  case class AdsSumReadCommand(commands: Seq[AdsReadCommand]) extends AdsSumCommand {
     def toAdsCommand: Attempt[AdsWriteReadCommand] = {
       val requestParts = commands.map(c => SumReadRequestPart(c.indexGroup, c.indexOffset, c.readLength))
 
@@ -29,9 +33,10 @@ object AdsSumCommand extends AdsSumCommandCodecs {
     }
   }
 
-  case class AdsSumWriteCommand(commands: Seq[AdsWriteCommand], values: BitVector) {
+  case class AdsSumWriteCommand(commands: Seq[AdsWriteCommand], values: BitVector) extends AdsSumCommand {
     def toAdsCommand: Attempt[AdsWriteReadCommand] = {
-      val requestParts = commands.map(c => SumWriteRequestPart(c.indexGroup, c.indexOffset, length = c.values.lengthInBytes))
+      val requestParts =
+        commands.map(c => SumWriteRequestPart(c.indexGroup, c.indexOffset, length = c.values.lengthInBytes))
       val valueBits = BitVector.concat(commands.map(_.values))
 
       for {
@@ -47,9 +52,10 @@ object AdsSumCommand extends AdsSumCommandCodecs {
 
   // A sum write read command is an ADS write/read command to a specific indexGroup with the sub write/read commands
   // encoded as the payload. The values to be written are encoded at the end
-  case class AdsSumWriteReadCommand(commands: Seq[AdsWriteReadCommand]) {
+  case class AdsSumWriteReadCommand(commands: Seq[AdsWriteReadCommand]) extends AdsSumCommand {
     def toAdsCommand: Attempt[AdsWriteReadCommand] = {
-      val requestParts = commands.map(c => SumReadWriteRequestPart(c.indexGroup, c.indexOffset, c.readLength, c.values.lengthInBytes))
+      val requestParts =
+        commands.map(c => SumReadWriteRequestPart(c.indexGroup, c.indexOffset, c.readLength, c.values.lengthInBytes))
       val valueBits = BitVector.concat(commands.map(_.values))
 
       for {
@@ -70,6 +76,6 @@ object AdsSumCommand extends AdsSumCommandCodecs {
 
   case class SumReadRequestPart(indexGroup: Long, indexOffset: Long, length: Long)
 
-  val errorCodeSize = 4
+  val errorCodeSize    = 4
   val resultLengthSize = 4
 }
