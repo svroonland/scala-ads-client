@@ -106,14 +106,14 @@ class AdsCommandClient(
    */
   private[adsclient] def runCommand[R <: AdsResponse: ClassTag](command: AdsCommand): AdsT[R] =
     for {
-      invokeId     <- generateInvokeId
-      packet       = createPacket(command, invokeId)
-      bytes        <- Codec[AmsPacket].encode(packet).toTask[Clock, AdsClientError](EncodingError)
-      writeCommand = writeQueue.offer(Chunk.fromIterable(bytes.toByteArray))
-      _            <- ZIO(println(s"Running command ${command}")).orDie
-      // Execute in parallel to avoid race conditions
-      response <- writeCommand &> awaitResponse(invokeId)
-      _        <- checkResponse(response)
+      invokeId <- generateInvokeId
+      packet   = createPacket(command, invokeId)
+      bytes    <- Codec[AmsPacket].encode(packet).toTask[Clock, AdsClientError](EncodingError)
+      _        <- ZIO(println(s"Running command ${command}")).orDie
+      response <- responsePromises.registerListener(invokeId).use { p =>
+                   writeQueue.offer(Chunk.fromIterable(bytes.toByteArray)) *> awaitResponse(p)
+                 }
+      _ <- checkResponse(response)
     } yield response
 
   def createPacket(command: AdsCommand, invokeId: Int): AmsPacket =
@@ -131,18 +131,16 @@ class AdsCommandClient(
       )
     )
 
-  def awaitResponse[R](invokeId: Int)(implicit classTag: ClassTag[R]): AdsT[R] =
-    responsePromises.registerListener(invokeId).use { p =>
-      for {
-        response <- p.await.timeoutFail(ResponseTimeout)(settings.timeout)
-        result <- response.header.data match {
-                   case Right(r) if r.getClass == classTag.runtimeClass =>
-                     ZIO.succeed(r.asInstanceOf[R])
-                   case r =>
-                     ZIO.fail[AdsClientError](UnexpectedResponse)
-                 }
-      } yield result
-    }
+  def awaitResponse[R](p: Promise[AdsClientError, AmsPacket])(implicit classTag: ClassTag[R]): AdsT[R] =
+    for {
+      response <- p.await.timeoutFail(ResponseTimeout)(settings.timeout)
+      result <- response.header.data match {
+                 case Right(r) if r.getClass == classTag.runtimeClass =>
+                   ZIO.succeed(r.asInstanceOf[R])
+                 case r @ _ =>
+                   ZIO.fail[AdsClientError](UnexpectedResponse)
+               }
+    } yield result
 
   def checkErrorCode(errorCode: Long): AdsT[Unit] =
     ZIO.fail(AdsErrorResponse(errorCode)).unless(errorCode == 0L)
@@ -154,6 +152,34 @@ class AdsCommandClient(
 
   private val generateInvokeId: UIO[Int] = invokeId.updateAndGet(_ + 1)
 }
+
+//trait PubSub[Topic, Message] {
+//  def publish(topic: Topic, message: Message): UIO[Unit]
+//  def messagesFor(topic: Topic): ZStream[Any, Nothing, Message]
+//}
+//
+//object PubSub {
+//  def make[Topic, Message]: ZManaged[Any, Nothing, PubSub[Topic, Message]] =
+//    for {
+//      queues <- Ref.make[Map[Topic, Queue[Message]]](Map.empty).toManaged_
+//    } yield new PubSub[Topic, Message] {
+//
+//      def registerQueue(topic: Topic): UManaged[Queue[Message]] =
+//        for {
+//          queue <- Queue.unbounded[Message].toManaged(_.shutdown)
+//          _ <- queues
+//            .update(_ + (topic -> queue))
+//            .toManaged(_ => queues.update(_ - topic))
+//        } yield queue
+//
+//      override def publish(topic: Topic, message: Message): UIO[Unit]        = for {
+//
+//        // Register queue if not exists
+//      } yield ()
+//
+//      override def messagesFor(topic: Topic): ZStream[Any, Nothing, Message] = ???
+//    }
+//}
 
 object AdsCommandClient extends AdsCommandCodecs with AmsCodecs {
 
@@ -227,7 +253,7 @@ object AdsCommandClient extends AdsCommandCodecs with AmsCodecs {
         } yield ()
       }
 
-      _ <- (responseProcessLoop <&> notificationsToQueue).unit.fork.toManaged_
+      _ <- (responseProcessLoop <&> notificationsToQueue).fork.toManaged_
     } yield (
       new ResponseListeners(responsePromises),
       new NotificationListeners(notificationQueues)

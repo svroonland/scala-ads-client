@@ -13,7 +13,7 @@ import zio.clock.Clock
  *
  * Import nl.vroste.adsclient._ to get access to all data types needed for working with the client
  */
-package object adsclient extends AdsCodecs {
+package object adsclient {
   type ErrorCode = Long
 
   type AdsT[+T] = ZIO[Clock, AdsClientError, T]
