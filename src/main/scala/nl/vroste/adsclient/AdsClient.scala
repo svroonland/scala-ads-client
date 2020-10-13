@@ -6,10 +6,10 @@ import nl.vroste.adsclient.internal.{ AdsClientImpl, AdsCommandClient, AdsNotifi
 import scodec.Codec
 import shapeless.HList
 import zio.clock.Clock
-import zio.nio.SocketAddress
 import zio.nio.channels.AsynchronousSocketChannel
 import zio.stream.{ ZSink, ZStream }
 import zio._
+import zio.nio.core.SocketAddress
 
 /**
  * A reactive (non-blocking) client for ADS servers
@@ -153,12 +153,11 @@ object AdsClient {
    */
   def connect(settings: AdsConnectionSettings): ZManaged[Clock, Exception, AdsClient] =
     for {
-      channel     <- AsynchronousSocketChannel().toManaged(client => ZIO.effect(client.close).orDie)
+      channel     <- AsynchronousSocketChannel()
       inetAddress <- SocketAddress.inetSocketAddress(settings.hostname, settings.port).toManaged_
       _ <- channel
             .connect(inetAddress)
-            .timeout(settings.timeout)
-            .flatMap(ZIO.fromOption(_).asError(new TimeoutException("Timeout connecting to ADS server")))
+            .timeoutFail(new TimeoutException("Timeout connecting to ADS server"))(settings.timeout)
             .toManaged_
       writeQueue                                 <- Queue.bounded[Chunk[Byte]](writeQueueSize).toManaged(_.shutdown)
       inputStream                                = createInputStream(channel)
@@ -171,11 +170,11 @@ object AdsClient {
     )
 
   private def writeLoop(channel: AsynchronousSocketChannel, queue: Queue[Chunk[Byte]]) =
-    (queue.take >>= channel.write).forever.toManaged_.fork
+    (queue.take >>= channel.writeChunk).forever.toManaged_.fork
 
   val maxFrameSize   = 1024
   val writeQueueSize = 10
 
   private def createInputStream(channel: AsynchronousSocketChannel): ZStream[Clock, Exception, Chunk[Byte]] =
-    ZStream.fromEffect(channel.read(maxFrameSize).retry(Schedule.forever)).forever
+    ZStream.fromEffect(channel.readChunk(maxFrameSize).retry(Schedule.forever)).forever
 }

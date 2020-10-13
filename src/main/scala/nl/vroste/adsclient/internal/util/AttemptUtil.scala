@@ -7,7 +7,7 @@ object AttemptUtil {
 
   implicit class AttemptToTask[+T](val attempt: Attempt[T]) extends AnyVal {
     def toTask[R, E](e: Err => E): ZIO[R, E, T] =
-      attempt.fold(cause => IO.fail(e(cause)), Task.succeed)
+      attempt.fold(cause => IO.fail(e(cause)), Task.succeed(_))
   }
 
   implicit class AttemptSequence[T](val seq: Seq[Attempt[T]]) extends AnyVal {

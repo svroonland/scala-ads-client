@@ -84,7 +84,7 @@ class AdsCommandClient(
   def deleteNotificationHandle(notificationHandle: NotificationHandle): AdsT[Unit] =
     runCommand[AdsDeleteDeviceNotificationCommandResponse] {
       AdsDeleteDeviceNotificationCommand(notificationHandle.value)
-    }.map(_ => ())
+    }.unit
 
   def writeToVariable(variableHandle: VariableHandle, value: BitVector): AdsT[Unit] =
     runCommand[AdsWriteCommandResponse] {
@@ -93,7 +93,7 @@ class AdsCommandClient(
         indexOffset = variableHandle.value,
         values = value
       )
-    }.map(_ => ())
+    }.unit
 
   def read(indexGroup: Long, indexOffset: Long, size: Long): AdsT[BitVector] =
     for {
@@ -106,7 +106,7 @@ class AdsCommandClient(
    */
   private[adsclient] def runCommand[R <: AdsResponse: ClassTag](command: AdsCommand): AdsT[R] =
     for {
-      invokeId     <- generateInvokeId.mapError(AdsClientException)
+      invokeId     <- generateInvokeId
       packet       = createPacket(command, invokeId)
       bytes        <- Codec[AmsPacket].encode(packet).toTask[Clock, AdsClientError](EncodingError)
       writeCommand = writeQueue.offer(Chunk.fromIterable(bytes.toByteArray))
@@ -145,14 +145,14 @@ class AdsCommandClient(
     }
 
   def checkErrorCode(errorCode: Long): AdsT[Unit] =
-    if (errorCode != 0L) ZIO.fail(AdsErrorResponse(errorCode)) else ZIO.unit
+    ZIO.fail(AdsErrorResponse(errorCode)).unless(errorCode == 0L)
 
   def checkErrorCodes(errorCodes: Seq[Long]): AdsT[Unit] =
-    ZIO.traverse(errorCodes)(checkErrorCode).unit
+    ZIO.foreach_(errorCodes)(checkErrorCode)
 
   def checkResponse(r: AdsResponse): AdsT[Unit] = checkErrorCode(r.errorCode)
 
-  private val generateInvokeId: Task[Int] = invokeId.update(_ + 1)
+  private val generateInvokeId: UIO[Int] = invokeId.updateAndGet(_ + 1)
 }
 
 object AdsCommandClient extends AdsCommandCodecs with AmsCodecs {
@@ -222,7 +222,7 @@ object AdsCommandClient extends AdsCommandCodecs with AmsCodecs {
       notificationsToQueue: ZIO[Clock, AdsClientError, Unit] = notificationSamples.foreach { n =>
         for {
           queues <- notificationQueues.get
-          queue  <- ZIO.fromOption(queues.get(n.handle)).asError(UnknownNotificationHandle)
+          queue  <- ZIO.fromOption(queues.get(n.handle)).orElseFail(UnknownNotificationHandle)
           _      <- queue.offer(n)
         } yield ()
       }
@@ -315,7 +315,7 @@ object AdsCommandClient extends AdsCommandCodecs with AmsCodecs {
       .mapAccumM(BitVector.empty) { (acc, curr) =>
         val availableBits = acc ++ curr
         if (availableBits.size >= implicitly[Codec[S]].sizeBound.lowerBound) {
-          Codec.decodeCollect(implicitly[Codec[S]], None)(availableBits) match {
+          Codec.decodeCollect[Seq, S](implicitly[Codec[S]], None)(availableBits) match {
             case Successful(DecodeResult(frames, remainder)) =>
               ZIO.succeed((remainder, frames))
             case Attempt.Failure(_: Err.InsufficientBits) =>
