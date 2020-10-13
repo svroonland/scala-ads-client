@@ -116,7 +116,7 @@ trait AdsClient {
   def consumerFor[T](
     varName: String,
     codec: Codec[T]
-  ): ZManaged[Clock, AdsClientError, ZSink[Clock, AdsClientError, T, T, Unit]]
+  ): ZSink[Clock, AdsClientError, T, T, Unit]
 
   /**
    * Creates a consumer that writes to many PLC variables at once
@@ -130,7 +130,7 @@ trait AdsClient {
   def consumerFor[T <: HList](
     variables: VariableList[T],
     codec: Codec[T]
-  ): ZManaged[Clock, AdsClientError, ZSink[Clock, AdsClientError, T, T, Unit]]
+  ): ZSink[Clock, AdsClientError, T, T, Unit]
 
   /**
    * Read the ADS state

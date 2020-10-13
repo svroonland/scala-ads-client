@@ -137,16 +137,16 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
   override def consumerFor[T](
     varName: String,
     codec: Codec[T]
-  ): ZManaged[Clock, AdsClientError, ZSink[Clock, AdsClientError, T, T, Unit]] =
-    variableHandle(varName).map { handle =>
+  ): ZSink[Clock, AdsClientError, T, T, Unit] =
+    ZSink.managed(variableHandle(varName)) { handle =>
       ZSink.drain.contramapM(write(handle, _, codec))
     }
 
   override def consumerFor[T <: HList](
     variables: VariableList[T],
     codec: Codec[T]
-  ): ZManaged[Clock, AdsClientError, ZSink[Clock, AdsClientError, T, T, Unit]] =
-    createHandles(variables).map { handles =>
+  ): ZSink[Clock, AdsClientError, T, T, Unit] =
+    ZSink.managed(createHandles(variables)) { handles =>
       ZSink.drain.contramapM(write(variables, handles, _))
     }
 
