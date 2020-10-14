@@ -8,7 +8,7 @@ class NotificationsSpec extends BaseSpec {
       val var1 = client.notificationsFor("MAIN.var4", int)
       for {
         result <- var1.take(3).map(_.value).run(Sink.collectAll[Short])
-        _      = println(s"Result: ${result.mkString(", ")}")
+        _       = println(s"Result: ${result.mkString(", ")}")
       } yield result.size mustBe 3
     }
   }

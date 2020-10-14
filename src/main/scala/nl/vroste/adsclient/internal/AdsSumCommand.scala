@@ -37,7 +37,7 @@ object AdsSumCommand extends AdsSumCommandCodecs {
     def toAdsCommand: Attempt[AdsWriteReadCommand] = {
       val requestParts =
         commands.map(c => SumWriteRequestPart(c.indexGroup, c.indexOffset, length = c.values.lengthInBytes))
-      val valueBits = BitVector.concat(commands.map(_.values))
+      val valueBits    = BitVector.concat(commands.map(_.values))
 
       for {
         requestPartsBits <- list(Codec[SumWriteRequestPart]).encode(requestParts.toList)
@@ -56,7 +56,7 @@ object AdsSumCommand extends AdsSumCommandCodecs {
     def toAdsCommand: Attempt[AdsWriteReadCommand] = {
       val requestParts =
         commands.map(c => SumReadWriteRequestPart(c.indexGroup, c.indexOffset, c.readLength, c.values.lengthInBytes))
-      val valueBits = BitVector.concat(commands.map(_.values))
+      val valueBits    = BitVector.concat(commands.map(_.values))
 
       for {
         requestPartsBits <- list(Codec[SumReadWriteRequestPart]).encode(requestParts.toList)

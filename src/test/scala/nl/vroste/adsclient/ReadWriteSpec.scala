@@ -65,7 +65,7 @@ class ReadWriteSpec extends BaseSpec {
 
   it must "read an array variable" in {
     clientM.use { client =>
-      val codec = array(10, int)
+      val codec  = array(10, int)
       val result = for {
         array <- client.read("MAIN.var8", codec)
       } yield array mustBe List(1, 3, 2, 4, 3, 5, 4, 6, 5, 7)

@@ -32,12 +32,12 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
 
   override def read[T <: HList](command: VariableList[T], handles: Seq[VariableHandle]): AdsT[T] =
     for {
-      sumCommand <- readVariablesCommand(handles.zip(command.sizes)).toTask(EncodingError)
-      response   <- runSumCommand(sumCommand)
+      sumCommand         <- readVariablesCommand(handles.zip(command.sizes)).toTask(EncodingError)
+      response           <- runSumCommand(sumCommand)
       errorCodesAndValue <- sumReadResponsePayloadDecoder(command.codec, command.variables.size)
-                             .decodeValue(response.data)
-                             .toTask(DecodingError)
-      _ <- client.checkErrorCodes(errorCodesAndValue._1)
+                              .decodeValue(response.data)
+                              .toTask(DecodingError)
+      _                  <- client.checkErrorCodes(errorCodesAndValue._1)
     } yield errorCodesAndValue._2
 
   override def write[T](varName: String, value: T, codec: Codec[T]): AdsT[Unit] =
@@ -163,13 +163,13 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
 
   def createHandles[T <: HList](command: VariableList[T]): ZManaged[Clock, AdsClientError, Seq[VariableHandle]] =
     (for {
-      sumCommand <- createVariableHandlesCommand(command.variables).toTask(EncodingError)
-      response   <- runSumCommand(sumCommand)
+      sumCommand           <- createVariableHandlesCommand(command.variables).toTask(EncodingError)
+      response             <- runSumCommand(sumCommand)
       errorCodesAndHandles <- sumWriteReadResponsePayloadDecoder[VariableHandle](command.variables.size)
-                               .decodeValue(response.data)
-                               .toTask(DecodingError)
-      errorCodes = errorCodesAndHandles.map(_._1)
-      _          <- client.checkErrorCodes(errorCodes)
+                                .decodeValue(response.data)
+                                .toTask(DecodingError)
+      errorCodes            = errorCodesAndHandles.map(_._1)
+      _                    <- client.checkErrorCodes(errorCodes)
     } yield errorCodesAndHandles.map(_._2)).toManaged(releaseHandles(_).ignore)
 
   private def releaseHandles(handles: Seq[VariableHandle]): AdsT[Unit] =

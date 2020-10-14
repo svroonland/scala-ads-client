@@ -18,8 +18,8 @@ class ReadWriteManySpec extends BaseSpec {
     clientM.use { client =>
       for {
         var1r <- client.read(variableList)
-        data  = genMyData.from(var1r)
-        _     = println(s"Var1: ${data.var1}, Var2: ${data.var2}, Var4: ${data.var4}, Var5: ${data.var5}")
+        data   = genMyData.from(var1r)
+        _      = println(s"Var1: ${data.var1}, Var2: ${data.var2}, Var4: ${data.var4}, Var5: ${data.var5}")
       } yield succeed
     }
   }
@@ -37,8 +37,8 @@ class ReadWriteManySpec extends BaseSpec {
     clientM.use { client =>
       val variableList = VariableList("MAIN.var1", int) +
         ("MAIN.varNotExist", string)
-      val result = for {
-        var1r        <- client.read(variableList)
+      val result       = for {
+        var1r       <- client.read(variableList)
         (var1, var2) = var1r.tupled
         _            = println(s"Var1: ${var1}, Var2: ${var2}")
       } yield fail

@@ -153,18 +153,18 @@ object AdsClient {
    */
   def connect(settings: AdsConnectionSettings): ZManaged[Clock, Exception, AdsClient] =
     for {
-      channel     <- AsynchronousSocketChannel()
-      inetAddress <- SocketAddress.inetSocketAddress(settings.hostname, settings.port).toManaged_
-      _ <- channel
-            .connect(inetAddress)
-            .timeoutFail(new TimeoutException("Timeout connecting to ADS server"))(settings.timeout)
-            .toManaged_
-      writeQueue                                 <- Queue.bounded[Chunk[Byte]](writeQueueSize).toManaged(_.shutdown)
+      channel                                   <- AsynchronousSocketChannel()
+      inetAddress                               <- SocketAddress.inetSocketAddress(settings.hostname, settings.port).toManaged_
+      _                                         <- channel
+             .connect(inetAddress)
+             .timeoutFail(new TimeoutException("Timeout connecting to ADS server"))(settings.timeout)
+             .toManaged_
+      writeQueue                                <- Queue.bounded[Chunk[Byte]](writeQueueSize).toManaged(_.shutdown)
       inputStream                                = createInputStream(channel)
-      runLoopThings                              <- AdsCommandClient.runLoop(inputStream)
+      runLoopThings                             <- AdsCommandClient.runLoop(inputStream)
       (responseListeners, notificationListeners) = runLoopThings
-      _                                          <- writeLoop(channel, writeQueue)
-      invokeIdRef                                <- Ref.make(0).toManaged_
+      _                                         <- writeLoop(channel, writeQueue)
+      invokeIdRef                               <- Ref.make(0).toManaged_
     } yield new AdsClientImpl(
       new AdsCommandClient(settings, writeQueue, invokeIdRef, notificationListeners, responseListeners)
     )

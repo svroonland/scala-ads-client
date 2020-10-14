@@ -107,13 +107,13 @@ class AdsCommandClient(
   private[adsclient] def runCommand[R <: AdsResponse: ClassTag](command: AdsCommand): AdsT[R] =
     for {
       invokeId <- generateInvokeId
-      packet   = createPacket(command, invokeId)
+      packet    = createPacket(command, invokeId)
       bytes    <- Codec[AmsPacket].encode(packet).toTask[Clock, AdsClientError](EncodingError)
       _        <- ZIO(println(s"Running command ${command}")).orDie
       response <- responsePromises.registerListener(invokeId).use { p =>
-                   writeQueue.offer(Chunk.fromIterable(bytes.toByteArray)) *> awaitResponse(p)
-                 }
-      _ <- checkResponse(response)
+                    writeQueue.offer(Chunk.fromIterable(bytes.toByteArray)) *> awaitResponse(p)
+                  }
+      _        <- checkResponse(response)
     } yield response
 
   def createPacket(command: AdsCommand, invokeId: Int): AmsPacket =
@@ -134,12 +134,12 @@ class AdsCommandClient(
   def awaitResponse[R](p: Promise[AdsClientError, AmsPacket])(implicit classTag: ClassTag[R]): AdsT[R] =
     for {
       response <- p.await.timeoutFail(ResponseTimeout)(settings.timeout)
-      result <- response.header.data match {
-                 case Right(r) if r.getClass == classTag.runtimeClass =>
-                   ZIO.succeed(r.asInstanceOf[R])
-                 case r @ _ =>
-                   ZIO.fail[AdsClientError](UnexpectedResponse)
-               }
+      result   <- response.header.data match {
+                  case Right(r) if r.getClass == classTag.runtimeClass =>
+                    ZIO.succeed(r.asInstanceOf[R])
+                  case r @ _                                           =>
+                    ZIO.fail[AdsClientError](UnexpectedResponse)
+                }
     } yield result
 
   def checkErrorCode(errorCode: Long): AdsT[Unit] =
@@ -187,9 +187,9 @@ object AdsCommandClient extends AdsCommandCodecs with AmsCodecs {
     def registerQueue(handle: Long): ZManaged[Any, Nothing, Queue[AdsNotificationSampleWithTimestamp]] =
       for {
         queue <- Queue.unbounded[AdsNotificationSampleWithTimestamp].toManaged(_.shutdown)
-        _ <- queues
-              .update(_ + (handle -> queue))
-              .toManaged(_ => queues.update(_ - handle))
+        _     <- queues
+               .update(_ + (handle -> queue))
+               .toManaged(_ => queues.update(_ - handle))
       } yield queue
   }
 
@@ -197,9 +197,9 @@ object AdsCommandClient extends AdsCommandCodecs with AmsCodecs {
     def registerListener(invokeId: Int): ZManaged[Any, Nothing, Promise[AdsClientError, AmsPacket]] =
       for {
         promise <- Promise.make[AdsClientError, AmsPacket].toManaged_
-        _ <- listeners
-              .update(_ + (invokeId -> promise))
-              .toManaged(_ => listeners.update(_ - invokeId))
+        _       <- listeners
+               .update(_ + (invokeId -> promise))
+               .toManaged(_ => listeners.update(_ - invokeId))
       } yield promise
   }
 
@@ -221,13 +221,13 @@ object AdsCommandClient extends AdsCommandCodecs with AmsCodecs {
       notificationQueues <- Ref.make[Map[Long, Queue[AdsNotificationSampleWithTimestamp]]](Map.empty).toManaged_
 
       // Completes a promise for each received packet depending on its invokeId
-      responseProcessLoop = substreams(0).foreach { packet =>
-        for {
-          promises   <- responsePromises.get
-          promiseOpt = promises.get(packet.header.invokeId)
-          _          <- promiseOpt.map(_.succeed(packet)).getOrElse(ZIO.unit)
-        } yield ()
-      }
+      responseProcessLoop                                                                     = substreams(0).foreach { packet =>
+                              for {
+                                promises  <- responsePromises.get
+                                promiseOpt = promises.get(packet.header.invokeId)
+                                _         <- promiseOpt.map(_.succeed(packet)).getOrElse(ZIO.unit)
+                              } yield ()
+                            }
 
       notificationSamples: ZStream[Clock, AdsClientError, AdsNotificationSampleWithTimestamp] = {
         // Stream of all responses from the ADS server
@@ -245,15 +245,17 @@ object AdsCommandClient extends AdsCommandCodecs with AmsCodecs {
       }
 
       // Task that pushes notifications to the queue for the given notification handle
-      notificationsToQueue: ZIO[Clock, AdsClientError, Unit] = notificationSamples.foreach { n =>
-        for {
-          queues <- notificationQueues.get
-          queue  <- ZIO.fromOption(queues.get(n.handle)).orElseFail(UnknownNotificationHandle)
-          _      <- queue.offer(n)
-        } yield ()
-      }
+      notificationsToQueue: ZIO[Clock, AdsClientError, Unit]                                  = notificationSamples.foreach { n =>
+                                                                 for {
+                                                                   queues <- notificationQueues.get
+                                                                   queue  <- ZIO
+                                                                              .fromOption(queues.get(n.handle))
+                                                                              .orElseFail(UnknownNotificationHandle)
+                                                                   _      <- queue.offer(n)
+                                                                 } yield ()
+                                                               }
 
-      _ <- (responseProcessLoop <&> notificationsToQueue).fork.toManaged_
+      _                                                                                      <- (responseProcessLoop <&> notificationsToQueue).fork.toManaged_
     } yield (
       new ResponseListeners(responsePromises),
       new NotificationListeners(notificationQueues)
@@ -290,16 +292,16 @@ object AdsCommandClient extends AdsCommandCodecs with AmsCodecs {
   def createVariableHandlesCommand(variables: Seq[String]): Attempt[AdsSumWriteReadCommand] =
     for {
       encodedVarNames <- variables.map(AdsCodecs.string.encode).sequence
-      commands = encodedVarNames.map(
-        AdsWriteReadCommand(IndexGroups.GetSymHandleByName, indexOffset = 0x00000000, readLength = 4, _)
-      )
+      commands         = encodedVarNames.map(
+                   AdsWriteReadCommand(IndexGroups.GetSymHandleByName, indexOffset = 0x00000000, readLength = 4, _)
+                 )
     } yield AdsSumWriteReadCommand(commands)
 
   def readVariablesCommand(handlesAndLengths: Seq[(VariableHandle, Long)]): Attempt[AdsSumReadCommand] =
     for {
       subCommands <- handlesAndLengths.map { case (handle, sizeInBits) => (handle, sizeInBits / 8) }
-                      .map((readVariableCommand _).tupled)
-                      .sequence
+                       .map((readVariableCommand _).tupled)
+                       .sequence
     } yield AdsSumReadCommand(subCommands)
 
   def writeVariablesCommand[T <: HList](
@@ -309,7 +311,7 @@ object AdsCommandClient extends AdsCommandCodecs with AmsCodecs {
   ): Attempt[AdsSumWriteCommand] = {
     val (handles, lengthsInBits) = handlesAndLengths.unzip
     for {
-      encodedValue  <- codec.encode(value)
+      encodedValue <- codec.encode(value)
       encodedValues = splitBitVectorAtPositions(encodedValue, lengthsInBits.toList)
 
       subCommands <- handles.zip(encodedValues).map((writeVariableCommand _).tupled).sequence
@@ -319,7 +321,7 @@ object AdsCommandClient extends AdsCommandCodecs with AmsCodecs {
   def releaseHandlesCommand(handles: Seq[VariableHandle]): Attempt[AdsSumWriteCommand] =
     for {
       subCommands <- handles.map(releaseVariableHandleCommand).sequence
-      values      = BitVector.concat(subCommands.map(_.values))
+      values       = BitVector.concat(subCommands.map(_.values))
     } yield AdsSumWriteCommand(subCommands, values)
 
   def splitBitVectorAtPositions(bitVector: BitVector, lengthsInBits: List[Long]): List[BitVector] =
@@ -340,18 +342,17 @@ object AdsCommandClient extends AdsCommandCodecs with AmsCodecs {
       .tap(bits => ZIO.effectTotal(println(s"Got packet ${bits.toHex}")))
       .mapAccumM(BitVector.empty) { (acc, curr) =>
         val availableBits = acc ++ curr
-        if (availableBits.size >= implicitly[Codec[S]].sizeBound.lowerBound) {
+        if (availableBits.size >= implicitly[Codec[S]].sizeBound.lowerBound)
           Codec.decodeCollect[Seq, S](implicitly[Codec[S]], None)(availableBits) match {
             case Successful(DecodeResult(frames, remainder)) =>
               ZIO.succeed((remainder, frames))
-            case Attempt.Failure(_: Err.InsufficientBits) =>
+            case Attempt.Failure(_: Err.InsufficientBits)    =>
               ZIO.succeed((availableBits, Seq.empty[S]))
-            case Attempt.Failure(cause) =>
+            case Attempt.Failure(cause)                      =>
               ZIO.fail(DecodingError(cause))
           }
-        } else {
+        else
           ZIO.succeed((availableBits, Seq.empty[S]))
-        }
       }
       .mapConcat(Chunk.fromIterable(_))
 }
