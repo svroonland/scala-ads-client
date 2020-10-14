@@ -1,6 +1,6 @@
 package nl.vroste
 
-import zio.ZIO
+import zio.{ Has, ZIO }
 import zio.clock.Clock
 
 /**
@@ -12,4 +12,6 @@ package object adsclient {
   type ErrorCode = Long
 
   type AdsT[+T] = ZIO[Clock, AdsClientError, T]
+
+  type AdsClient = Has[AdsClient.Service]
 }

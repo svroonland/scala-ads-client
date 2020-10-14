@@ -9,7 +9,7 @@ import zio.ZManaged
 import zio.clock.Clock
 import zio.stream.{ ZSink, ZStream }
 
-class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
+class AdsClientImpl(client: AdsCommandClient) extends AdsClient.Service {
 
   import AdsClientImpl._
   import AdsCommandClient._
