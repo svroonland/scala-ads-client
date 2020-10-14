@@ -246,13 +246,19 @@ object AdsCommandClient extends AdsCommandCodecs with AmsCodecs {
 
       // Task that pushes notifications to the queue for the given notification handle
       notificationsToQueue: ZIO[Clock, AdsClientError, Unit] = notificationSamples.foreach { n =>
-                                                                 for {
+                                                                 (for {
                                                                    queues <- notificationQueues.get
                                                                    queue  <- ZIO
                                                                               .fromOption(queues.get(n.handle))
                                                                               .orElseFail(UnknownNotificationHandle)
                                                                    _      <- queue.offer(n)
-                                                                 } yield ()
+                                                                 } yield ())
+                                                                   .tapError(_ =>
+                                                                     UIO(
+                                                                       println(s"Unknown notification ${n.handle}")
+                                                                     )
+                                                                   )
+                                                                   .orElseSucceed(())
                                                                }
 
       _                                                     <- (responseProcessLoop <&> notificationsToQueue).fork.toManaged_

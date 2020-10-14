@@ -5,6 +5,7 @@ import zio.console.putStrLn
 import zio.stream.Sink
 import zio.test._
 import zio.test.Assertion._
+import zio.test.TestAspect.nonFlaky
 
 object NotificationsSpec extends DefaultRunnableSpec {
   import AdsCodecs._
@@ -27,5 +28,5 @@ object NotificationsSpec extends DefaultRunnableSpec {
           result <- AdsClient.notificationsFor("MAIN.var1", lreal).runDrain.run
         } yield assert(result)(fails(isSubtype[AdsClientError](anything)))
       }
-    ).provideCustomLayerShared(Clock.live >+> AdsClient.connect(TestUtil.settings).toLayer.orDie) // @@ nonFlaky
+    ).provideCustomLayerShared(Clock.live >+> AdsClient.connect(TestUtil.settings).toLayer.orDie) @@ nonFlaky
 }
