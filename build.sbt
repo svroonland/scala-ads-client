@@ -16,7 +16,7 @@ lazy val root = (project in file(".")).settings(
     "io.monix"     %% "monix"       % "3.0.0-RC2",
     "com.beachape" %% "enumeratum"  % "1.5.13",
     "org.scodec"   %% "scodec-bits" % "1.1.5",
-    "org.scodec"   %% "scodec-core" % "1.10.3"
+    "org.scodec"   %% "scodec-core" % "1.11.7"
   )
 )
 
