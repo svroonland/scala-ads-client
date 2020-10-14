@@ -1,6 +1,6 @@
 package nl.vroste.adsclient
 
-import java.time.{LocalDate, LocalDateTime, LocalTime}
+import java.time.{ LocalDate, LocalDateTime, LocalTime }
 
 import monix.eval.Task
 import scodec.Codec
@@ -38,7 +38,7 @@ class ReadWriteSpec extends BaseSpec {
 
   it must "read a date and time" in {
     val result = for {
-      _ <- Task.eval(println("Running read a datetime"))
+      _      <- Task.eval(println("Running read a datetime"))
       result <- client.read("MAIN.var9", dateAndTime)
     } yield result mustBe LocalDateTime.of(2016, 3, 8, 12, 13, 14)
 
@@ -54,7 +54,7 @@ class ReadWriteSpec extends BaseSpec {
   }
 
   it must "read an array variable" in {
-    val codec = array(10, int)
+    val codec  = array(10, int)
     val result = for {
       array <- client.read("MAIN.var8", codec)
     } yield array mustBe List(1, 3, 2, 4, 3, 5, 4, 6, 5, 7)
@@ -86,5 +86,3 @@ class ReadWriteSpec extends BaseSpec {
     result.onErrorRecover { case AdsClientException(_) => succeed }
   }
 }
-
-

@@ -1,7 +1,5 @@
 package nl.vroste.adsclient
 
-import org.scalatest.{AsyncFlatSpec, MustMatchers}
+import org.scalatest.{ AsyncFlatSpec, MustMatchers }
 
-trait BaseSpec extends AsyncFlatSpec with MustMatchers with WithAdsClient with MonixSupport {
-
-}
+trait BaseSpec extends AsyncFlatSpec with MustMatchers with WithAdsClient with MonixSupport {}

@@ -9,5 +9,3 @@ class ConnectSpec extends BaseSpec {
     }
   }
 }
-
-

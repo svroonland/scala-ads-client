@@ -2,10 +2,10 @@ package nl.vroste.adsclient
 
 class NotificationsSpec extends BaseSpec {
   it must "observe a changing variable" in {
-    val var1 = client.notificationsFor("MAIN.var4", int)
+    val var1   = client.notificationsFor("MAIN.var4", int)
     val result = for {
       result <- var1.take(3).map(_.value).consumeWith(consumerToSeq).executeAsync
-      _ = println(s"Result: ${result.mkString(", ")}")
+      _       = println(s"Result: ${result.mkString(", ")}")
     } yield result.size mustBe 3
 
     result
@@ -25,5 +25,3 @@ class NotificationsSpec extends BaseSpec {
     result.onErrorRecover { case AdsClientException(_) => succeed }
   }
 }
-
-

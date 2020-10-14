@@ -2,8 +2,8 @@ package nl.vroste.adsclient.internal.codecs
 
 import nl.vroste.adsclient.internal._
 import nl.vroste.adsclient.internal.AdsCommand
-import scodec.codecs.{StringEnrichedWithCodecContextSupport, bits, listOfN, uint32L, variableSizeBytesLong}
-import scodec.{Attempt, Codec, Err}
+import scodec.codecs.{ bits, listOfN, uint32L, variableSizeBytesLong, StringEnrichedWithCodecContextSupport }
+import scodec.{ Attempt, Codec, Err }
 
 trait AdsResponseCodecs {
   import AdsResponse._
@@ -34,32 +34,33 @@ trait AdsResponseCodecs {
     (WindowsFiletime.codec :: listOfN("samples" | uint32LAsInt, adsNotificationSampleCodec)).as
 
   val adsDeviceNotificationCodec: Codec[AdsNotificationResponse] =
-    variableSizeBytesLong("length" | uint32L,
-      listOfN("stamps" | uint32LAsInt, adsStampHeaderCodec)
-    ).hlist.as
+    variableSizeBytesLong("length" | uint32L, listOfN("stamps" | uint32LAsInt, adsStampHeaderCodec)).hlist.as
 
   val commandIdToResponseCodec: Int => Codec[AdsResponse] = {
-    case 2 =>
+    case 2                =>
       adsReadCommandResponseCodec.upcast
-    case 3 =>
+    case 3                =>
       adsWriteCommandResponseCodec.upcast
-    case 6 =>
+    case 6                =>
       adsAddDeviceNotificationResponseCodec.upcast
-    case 7 =>
+    case 7                =>
       adsDeleteDeviceNotificationCommandResponseCodec.upcast
-    case 8 =>
+    case 8                =>
       adsDeviceNotificationCodec.upcast
-    case 9 =>
+    case 9                =>
       adsWriteReadCommandResponseCodec.upcast
     case unknownCommandId =>
       scodec.codecs.fail(Err(s"Unknown command id ${unknownCommandId}"))
   }
 
   def codecForCommandId(commandId: Int): Codec[Either[AdsCommand, AdsResponse]] =
-    commandIdToResponseCodec(commandId).exmap(r => Attempt.successful(Right(r)), {
-      case Right(r) => Attempt.successful(r)
-      case Left(_) => Attempt.failure(Err(s"not a value of type AdsResponse"))
-    })
+    commandIdToResponseCodec(commandId).exmap(
+      r => Attempt.successful(Right(r)),
+      {
+        case Right(r) => Attempt.successful(r)
+        case Left(_)  => Attempt.failure(Err(s"not a value of type AdsResponse"))
+      }
+    )
 }
 
 object AdsResponseCodecs extends AdsResponseCodecs
