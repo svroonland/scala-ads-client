@@ -346,7 +346,7 @@ object AdsCommandClient extends AdsCommandCodecs with AmsCodecs {
     stream
       .mapError[AdsClientError](AdsClientException(_))
       .map(chunk => BitVector(chunk.toArray))
-      .tap(bits => ZIO.effectTotal(println(s"Got packet ${bits.toHex}")))
+      //      .tap(bits => ZIO.effectTotal(println(s"Got packet ${bits.toHex}")))
       .mapAccumM(BitVector.empty) { (acc, curr) =>
         val availableBits = acc ++ curr
         if (availableBits.size >= implicitly[Codec[S]].sizeBound.lowerBound)

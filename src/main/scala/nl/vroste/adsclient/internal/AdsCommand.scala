@@ -14,10 +14,16 @@ object AdsCommand {
     override def toString: String = s"Read {indexGroup=$indexGroup, indexOffset=$indexOffset, readLength=$readLength}"
   }
 
-  case class AdsWriteCommand(indexGroup: Long, indexOffset: Long, values: BitVector) extends AdsCommand
+  case class AdsWriteCommand(indexGroup: Long, indexOffset: Long, values: BitVector) extends AdsCommand {
+    override def toString: String =
+      s"Write {indexGroup=$indexGroup, indexOffset=$indexOffset, values=${values.toHex}}"
+  }
 
   case class AdsWriteReadCommand(indexGroup: Long, indexOffset: Long, readLength: Long, values: BitVector)
-      extends AdsCommand
+      extends AdsCommand {
+    override def toString: String =
+      s"WriteRead {indexGroup=$indexGroup, indexOffset=$indexOffset, readLength=$readLength, values=${values.toHex}}"
+  }
 
   case class AdsAddDeviceNotificationCommand(
     indexGroup: Long,
