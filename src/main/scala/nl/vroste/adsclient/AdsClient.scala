@@ -169,8 +169,14 @@ object AdsClient {
       new AdsCommandClient(settings, writeQueue, invokeIdRef, notificationListeners, responseListeners)
     )
 
-  private def writeLoop(channel: AsynchronousSocketChannel, queue: Queue[Chunk[Byte]]) =
-    (queue.take.flatMap(channel.writeChunk)).forever.toManaged_.fork
+  private def writeLoop(
+    channel: AsynchronousSocketChannel,
+    queue: Queue[Chunk[Byte]]
+  ): ZManaged[Any, Nothing, Fiber.Runtime[Exception, Nothing]] =
+    (for {
+      bytes <- queue.take
+      _     <- channel.writeChunk(bytes)
+    } yield ()).forever.toManaged_.fork
 
   val maxFrameSize   = 1024
   val writeQueueSize = 10
