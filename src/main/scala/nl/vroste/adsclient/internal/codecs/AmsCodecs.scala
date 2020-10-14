@@ -34,7 +34,7 @@ trait AmsCodecs {
               AdsResponseCodecs.codecForCommandId(commandId)
             case 0x0004                   =>
               // Request
-              AdsCommandCodecs.codecForCommandId(commandId)
+              AdsCommandCodecs.codecForCommand
           }
 
         variableSizePrefixedBytesLong(
@@ -58,7 +58,7 @@ trait AmsCodecs {
           targetPort.toInt,
           netIdSource,
           portSource.toInt,
-          commandId.toShort,
+          commandId.toInt,
           stateFlags,
           errorCode.toInt,
           invokeId.toInt,

@@ -2,14 +2,14 @@ package nl.vroste.adsclient
 
 import java.util.concurrent.TimeoutException
 
-import nl.vroste.adsclient.internal.{ AdsClientImpl, AdsCommandClient, AdsNotificationSampleWithTimestamp }
+import nl.vroste.adsclient.internal.{ AdsClientImpl, AdsCommandClient }
 import scodec.Codec
 import shapeless.HList
+import zio._
 import zio.clock.Clock
 import zio.nio.channels.AsynchronousSocketChannel
-import zio.stream.{ ZSink, ZStream }
-import zio._
 import zio.nio.core.SocketAddress
+import zio.stream.{ ZSink, ZStream }
 
 /**
  * A reactive (non-blocking) client for ADS servers

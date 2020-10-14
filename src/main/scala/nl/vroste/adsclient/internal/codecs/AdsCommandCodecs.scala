@@ -11,7 +11,8 @@ trait AdsCommandCodecs {
 
   implicit val variableHandleCodec: Codec[VariableHandle] = AdsCodecs.udint.xmap(VariableHandle.apply, _.value)
 
-  implicit val adsStateCodec: Codec[AdsState] = AdsCodecs.int.xmap(AdsState.values(_), AdsState.indexOf(_).toShort)
+  implicit val adsStateCodec: Codec[AdsState] =
+    AdsCodecs.int.xmap(i => AdsState.values(i.toInt), AdsState.indexOf(_).toShort)
 
   implicit val adsTransmissionModeCodec: Codec[AdsTransmissionMode] = uint32L.xmapc[AdsTransmissionMode] { l =>
     if (l == 3L) AdsTransmissionMode.Cyclic else AdsTransmissionMode.OnChange
@@ -46,7 +47,7 @@ trait AdsCommandCodecs {
       deleteDeviceNotificationCommandCodec
   ).choice.as[AdsCommand]
 
-  def codecForCommandId(commandId: Int): Codec[Either[AdsCommand, AdsResponse]] =
+  def codecForCommand: Codec[Either[AdsCommand, AdsResponse]] =
     codec.exmap(
       r => Attempt.successful(Left(r)),
       {

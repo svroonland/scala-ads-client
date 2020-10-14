@@ -30,7 +30,7 @@ trait AdsSumCommandResponseCodecs extends AdsResponseCodecs {
 
           val valueCodecs = lengths.zipWithIndex.map {
             case (length, index) =>
-              bits(length.toInt * 8).withContext(s"WriteRead sub response value ${index + 1}")
+              bits(length.toLong * 8).withContext(s"WriteRead sub response value ${index + 1}")
           }
 
           valueCodecs.sequence.map(errorCodes zip _)

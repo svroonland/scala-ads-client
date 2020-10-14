@@ -57,8 +57,8 @@ class AdsCommandClient(
   def getNotificationHandle(
     variableHandle: VariableHandle,
     length: Long,
-    maxDelay: Int,
-    cycleTime: Int
+    maxDelay: Long,
+    cycleTime: Long
   ): AdsT[NotificationHandle] =
     getNotificationHandle(IndexGroups.ReadWriteSymValByHandle, variableHandle.value, length, maxDelay, cycleTime)
 
@@ -66,8 +66,8 @@ class AdsCommandClient(
     indexGroup: Long,
     indexOffset: Long,
     length: Long,
-    maxDelay: Int,
-    cycleTime: Int
+    maxDelay: Long,
+    cycleTime: Long
   ): AdsT[NotificationHandle] =
     runCommand[AdsAddDeviceNotificationCommandResponse] {
       AdsAddDeviceNotificationCommand(
@@ -221,7 +221,7 @@ object AdsCommandClient extends AdsCommandCodecs with AmsCodecs {
       notificationQueues <- Ref.make[Map[Long, Queue[AdsNotificationSampleWithTimestamp]]](Map.empty).toManaged_
 
       // Completes a promise for each received packet depending on its invokeId
-      responseProcessLoop                                                                     = substreams(0).foreach { packet =>
+      responseProcessLoop                                    = substreams(0).foreach { packet =>
                               for {
                                 promises  <- responsePromises.get
                                 promiseOpt = promises.get(packet.header.invokeId)
@@ -229,7 +229,7 @@ object AdsCommandClient extends AdsCommandCodecs with AmsCodecs {
                               } yield ()
                             }
 
-      notificationSamples: ZStream[Clock, AdsClientError, AdsNotificationSampleWithTimestamp] = {
+      notificationSamples                                    = {
         // Stream of all responses from the ADS server
         val responses: ZStream[Clock, AdsClientError, AdsResponse] =
           substreams(1)
@@ -245,7 +245,7 @@ object AdsCommandClient extends AdsCommandCodecs with AmsCodecs {
       }
 
       // Task that pushes notifications to the queue for the given notification handle
-      notificationsToQueue: ZIO[Clock, AdsClientError, Unit]                                  = notificationSamples.foreach { n =>
+      notificationsToQueue: ZIO[Clock, AdsClientError, Unit] = notificationSamples.foreach { n =>
                                                                  for {
                                                                    queues <- notificationQueues.get
                                                                    queue  <- ZIO
@@ -255,7 +255,7 @@ object AdsCommandClient extends AdsCommandCodecs with AmsCodecs {
                                                                  } yield ()
                                                                }
 
-      _                                                                                      <- (responseProcessLoop <&> notificationsToQueue).fork.toManaged_
+      _                                                     <- (responseProcessLoop <&> notificationsToQueue).fork.toManaged_
     } yield (
       new ResponseListeners(responsePromises),
       new NotificationListeners(notificationQueues)
@@ -333,7 +333,8 @@ object AdsCommandClient extends AdsCommandCodecs with AmsCodecs {
       }
       ._2
 
-  def keepSecond[T, U](first: T, second: U): U = second
+  // Weird construct to prevent unused param warning for 'first'
+  def keepSecond[U](first: Any, second: U): U = first match { case _ => second }
 
   private def decodeStream[R, S: Codec](stream: ZStream[R, Exception, Chunk[Byte]]): ZStream[R, AdsClientError, S] =
     stream

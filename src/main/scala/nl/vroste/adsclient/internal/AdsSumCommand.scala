@@ -26,7 +26,7 @@ object AdsSumCommand extends AdsSumCommandCodecs {
         requestPartsBits <- list(Codec[SumReadRequestPart]).encode(requestParts.toList)
       } yield AdsWriteReadCommand(
         indexGroup = IndexGroups.SumRead,
-        indexOffset = commands.length,
+        indexOffset = commands.length.toLong,
         values = requestPartsBits,
         readLength = commands.map(_.readLength).sum + errorCodeSize * commands.length
       )
@@ -43,9 +43,9 @@ object AdsSumCommand extends AdsSumCommandCodecs {
         requestPartsBits <- list(Codec[SumWriteRequestPart]).encode(requestParts.toList)
       } yield AdsWriteReadCommand(
         indexGroup = IndexGroups.SumWrite,
-        indexOffset = commands.length,
+        indexOffset = commands.length.toLong,
         values = requestPartsBits ++ valueBits,
-        readLength = errorCodeSize * commands.length
+        readLength = errorCodeSize * commands.length.toLong
       )
     }
   }
@@ -62,7 +62,7 @@ object AdsSumCommand extends AdsSumCommandCodecs {
         requestPartsBits <- list(Codec[SumReadWriteRequestPart]).encode(requestParts.toList)
       } yield AdsWriteReadCommand(
         indexGroup = IndexGroups.SumWriteRead,
-        indexOffset = commands.length,
+        indexOffset = commands.length.toLong,
         // Result + error code + data for each sub command
         readLength = commands.map(_.readLength + resultLengthSize + errorCodeSize).sum,
         values = requestPartsBits ++ valueBits

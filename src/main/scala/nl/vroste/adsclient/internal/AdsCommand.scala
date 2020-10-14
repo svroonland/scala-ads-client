@@ -28,7 +28,7 @@ object AdsCommand {
 
   case class AdsDeleteDeviceNotificationCommand(notificationHandle: Long) extends AdsCommand
 
-  def commandId(c: AdsCommand): Short =
+  def commandId(c: AdsCommand): Int =
     c match {
       case AdsReadCommand(_, _, _)                           => 0x0002
       case AdsWriteCommand(_, _, _)                          => 0x0003
