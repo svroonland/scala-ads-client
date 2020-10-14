@@ -9,9 +9,8 @@ import nl.vroste.adsclient.internal.AdsSumCommand.{ AdsSumReadCommand, AdsSumWri
 import nl.vroste.adsclient.internal.codecs.{ AdsCommandCodecs, AmsCodecs }
 import nl.vroste.adsclient.internal.util.AttemptUtil._
 import nl.vroste.adsclient.{ AdsClientError, _ }
-import scodec.Attempt.Successful
 import scodec.bits.BitVector
-import scodec.{ Attempt, Codec, DecodeResult, Err }
+import scodec.{ Attempt, Codec }
 import shapeless.HList
 import zio._
 import zio.clock.Clock
@@ -46,12 +45,12 @@ class AdsCommandClient(
   import nl.vroste.adsclient.internal.codecs.AdsCommandCodecs.variableHandleCodec
 
   def getVariableHandle(varName: String): AdsT[VariableHandle] =
-    getVariableHandleCommand(varName).toTask(EncodingError) >>=
+    getVariableHandleCommand(varName).toZio(EncodingError) >>=
       runCommand[AdsWriteReadCommandResponse] >>=
-      (_.decode[VariableHandle].toTask(DecodingError))
+      (_.decode[VariableHandle].toZio(DecodingError))
 
   def releaseVariableHandle(handle: VariableHandle): AdsT[Unit] =
-    releaseVariableHandleCommand(handle).toTask(EncodingError) >>=
+    releaseVariableHandleCommand(handle).toZio(EncodingError) >>=
       (runCommand[AdsWriteCommandResponse](_).unit)
 
   def getNotificationHandle(
@@ -97,7 +96,7 @@ class AdsCommandClient(
 
   def read(indexGroup: Long, indexOffset: Long, size: Long): AdsT[BitVector] =
     for {
-      command  <- readCommand(indexGroup, indexOffset, size).toTask(EncodingError)
+      command  <- readCommand(indexGroup, indexOffset, size).toZio(EncodingError)
       response <- runCommand[AdsReadCommandResponse](command)
     } yield response.data
 
@@ -108,7 +107,7 @@ class AdsCommandClient(
     for {
       invokeId <- generateInvokeId
       packet    = createPacket(command, invokeId)
-      bytes    <- Codec[AmsPacket].encode(packet).toTask[Clock, AdsClientError](EncodingError)
+      bytes    <- Codec[AmsPacket].encode(packet).toZio[Clock, AdsClientError](EncodingError)
       _        <- ZIO(println(s"Running command ${command}")).orDie
       response <- responsePromises.registerListener(invokeId).use { p =>
                     writeQueue.offer(Chunk.fromIterable(bytes.toByteArray)) *> awaitResponse(p)
@@ -152,34 +151,6 @@ class AdsCommandClient(
 
   private val generateInvokeId: UIO[Int] = invokeId.updateAndGet(_ + 1)
 }
-
-//trait PubSub[Topic, Message] {
-//  def publish(topic: Topic, message: Message): UIO[Unit]
-//  def messagesFor(topic: Topic): ZStream[Any, Nothing, Message]
-//}
-//
-//object PubSub {
-//  def make[Topic, Message]: ZManaged[Any, Nothing, PubSub[Topic, Message]] =
-//    for {
-//      queues <- Ref.make[Map[Topic, Queue[Message]]](Map.empty).toManaged_
-//    } yield new PubSub[Topic, Message] {
-//
-//      def registerQueue(topic: Topic): UManaged[Queue[Message]] =
-//        for {
-//          queue <- Queue.unbounded[Message].toManaged(_.shutdown)
-//          _ <- queues
-//            .update(_ + (topic -> queue))
-//            .toManaged(_ => queues.update(_ - topic))
-//        } yield queue
-//
-//      override def publish(topic: Topic, message: Message): UIO[Unit]        = for {
-//
-//        // Register queue if not exists
-//      } yield ()
-//
-//      override def messagesFor(topic: Topic): ZStream[Any, Nothing, Message] = ???
-//    }
-//}
 
 object AdsCommandClient extends AdsCommandCodecs with AmsCodecs {
 
@@ -343,58 +314,7 @@ object AdsCommandClient extends AdsCommandCodecs with AmsCodecs {
   def keepSecond[U](first: Any, second: U): U = first match { case _ => second }
 
   private def decodeStream[R, S: Codec](stream: ZStream[R, Exception, Chunk[Byte]]): ZStream[R, AdsClientError, S] =
-    stream
-      .mapError[AdsClientError](AdsClientException(_))
-      .map(chunk => BitVector(chunk.toArray))
-      //      .tap(bits => ZIO.effectTotal(println(s"Got packet ${bits.toHex}")))
-      .mapAccumM(BitVector.empty) { (acc, curr) =>
-        val availableBits = acc ++ curr
-        if (availableBits.size >= implicitly[Codec[S]].sizeBound.lowerBound)
-          Codec.decodeCollect[Seq, S](implicitly[Codec[S]], None)(availableBits) match {
-            case Successful(DecodeResult(frames, remainder)) =>
-              ZIO.succeed((remainder, frames))
-            case Attempt.Failure(_: Err.InsufficientBits)    =>
-              ZIO.succeed((availableBits, Seq.empty[S]))
-            case Attempt.Failure(cause)                      =>
-              ZIO.fail(DecodingError(cause))
-          }
-        else
-          ZIO.succeed((availableBits, Seq.empty[S]))
-      }
-      .mapConcat(Chunk.fromIterable(_))
-}
-
-object ZStreamScodecOps {
-//  /**
-//   * Decode a stream of S from a byte stream using the Codec for S
-//   * @param stream
-//   * @param decodingError How to encode
-//   * @tparam R
-//   * @tparam E
-//   * @tparam E1
-//   * @tparam S
-//   * @return
-//   */
-//  def decodeStream[R, E, E1 >: E, S: Codec](
-//    stream: ZStream[R, E, Chunk[Byte]],
-//    decodingError: Err => E1
-//  ): ZStream[R, E1, S] =
-//    stream
-//      .map(chunk => BitVector(chunk.toArray))
-//      //      .tap(bits => ZIO.effectTotal(println(s"Got packet ${bits.toHex}")))
-//      .mapAccumM[Any, E1, BitVector, Seq[S]](BitVector.empty) { (acc, curr) =>
-//        val availableBits = acc ++ curr
-//        if (availableBits.size >= implicitly[Codec[S]].sizeBound.lowerBound)
-//          Codec.decodeCollect[Seq, S](implicitly[Codec[S]], None)(availableBits) match {
-//            case Successful(DecodeResult(frames, remainder)) =>
-//              ZIO.succeed((remainder, frames))
-//            case Attempt.Failure(_: Err.InsufficientBits)    =>
-//              ZIO.succeed((availableBits, Seq.empty[S]))
-//            case Attempt.Failure(cause)                      =>
-//              ZIO.fail(decodingError(cause))
-//          }
-//        else
-//          ZIO.succeed((availableBits, Seq.empty[S]))
-//      }
-//      .mapConcat(Chunk.fromIterable)
+    ZStreamScodecOps.decodeStream(stream.mapError[AdsClientError](AdsClientException(_)), DecodingError.apply)(
+      implicitly[Codec[S]]
+    )
 }

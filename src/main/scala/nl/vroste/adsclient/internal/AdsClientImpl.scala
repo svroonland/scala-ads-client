@@ -24,7 +24,7 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient.Service {
   def read[T](indexGroup: Long, indexOffset: Long, codec: Codec[T]): AdsT[T] =
     for {
       data    <- client.read(indexGroup, indexOffset, sizeInBytes(codec))
-      decoded <- codec.decodeValue(data).toTask(DecodingError)
+      decoded <- codec.decodeValue(data).toZio(DecodingError)
     } yield decoded
 
   override def read[T <: HList](command: VariableList[T]): AdsT[T] =
@@ -32,11 +32,11 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient.Service {
 
   override def read[T <: HList](command: VariableList[T], handles: Seq[VariableHandle]): AdsT[T] =
     for {
-      sumCommand         <- readVariablesCommand(handles.zip(command.sizes)).toTask(EncodingError)
+      sumCommand         <- readVariablesCommand(handles.zip(command.sizes)).toZio(EncodingError)
       response           <- runSumCommand(sumCommand)
       errorCodesAndValue <- sumReadResponsePayloadDecoder(command.codec, command.variables.size)
                               .decodeValue(response.data)
-                              .toTask(DecodingError)
+                              .toZio(DecodingError)
       _                  <- client.checkErrorCodes(errorCodesAndValue._1)
     } yield errorCodesAndValue._2
 
@@ -46,7 +46,7 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient.Service {
   override def write[T](handle: VariableHandle, value: T, codec: Codec[T]): AdsT[Unit] =
     codec
       .encode(value)
-      .toTask(DecodingError)
+      .toZio(DecodingError)
       .flatMap(client.writeToVariable(handle, _))
 
   override def write[T <: HList](command: VariableList[T], values: T): AdsT[Unit] =
@@ -54,9 +54,9 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient.Service {
 
   override def write[T <: HList](command: VariableList[T], handles: Seq[VariableHandle], values: T): AdsT[Unit] =
     for {
-      sumCommand <- writeVariablesCommand(handles.zip(command.sizes), command.codec, values).toTask(EncodingError)
+      sumCommand <- writeVariablesCommand(handles.zip(command.sizes), command.codec, values).toZio(EncodingError)
       response   <- runSumCommand(sumCommand)
-      errorCodes <- adsSumWriteCommandResponseCodec.decodeValue(response.data).map(_.errorCodes).toTask(DecodingError)
+      errorCodes <- adsSumWriteCommandResponseCodec.decodeValue(response.data).map(_.errorCodes).toZio(DecodingError)
       _          <- client.checkErrorCodes(errorCodes)
     } yield ()
 
@@ -90,7 +90,7 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient.Service {
             .fromEffect(
               codec
                 .decodeValue(sample.data)
-                .toTask(DecodingError)
+                .toZio(DecodingError)
             )
             .map(AdsNotification(_, sample.timestamp))
         }
@@ -163,25 +163,25 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient.Service {
 
   def createHandles[T <: HList](command: VariableList[T]): ZManaged[Clock, AdsClientError, Seq[VariableHandle]] =
     (for {
-      sumCommand           <- createVariableHandlesCommand(command.variables).toTask(EncodingError)
+      sumCommand           <- createVariableHandlesCommand(command.variables).toZio(EncodingError)
       response             <- runSumCommand(sumCommand)
       errorCodesAndHandles <- sumWriteReadResponsePayloadDecoder[VariableHandle](command.variables.size)
                                 .decodeValue(response.data)
-                                .toTask(DecodingError)
+                                .toZio(DecodingError)
       errorCodes            = errorCodesAndHandles.map(_._1)
       _                    <- client.checkErrorCodes(errorCodes)
     } yield errorCodesAndHandles.map(_._2)).toManaged(releaseHandles(_).ignore)
 
   private def releaseHandles(handles: Seq[VariableHandle]): AdsT[Unit] =
     for {
-      sumCommand <- releaseHandlesCommand(handles).toTask(EncodingError)
+      sumCommand <- releaseHandlesCommand(handles).toZio(EncodingError)
       response   <- runSumCommand(sumCommand)
-      errorCodes <- adsSumWriteCommandResponseCodec.decodeValue(response.data).map(_.errorCodes).toTask(DecodingError)
+      errorCodes <- adsSumWriteCommandResponseCodec.decodeValue(response.data).map(_.errorCodes).toZio(DecodingError)
       _          <- client.checkErrorCodes(errorCodes)
     } yield ()
 
   private def runSumCommand(c: AdsSumCommand) =
-    c.toAdsCommand.toTask(EncodingError) >>= client.runCommand[AdsWriteReadCommandResponse]
+    c.toAdsCommand.toZio(EncodingError) >>= client.runCommand[AdsWriteReadCommandResponse]
 }
 
 object AdsClientImpl extends AdsSumCommandResponseCodecs {
