@@ -170,7 +170,7 @@ object AdsClient {
     )
 
   private def writeLoop(channel: AsynchronousSocketChannel, queue: Queue[Chunk[Byte]]) =
-    (queue.take >>= channel.writeChunk).forever.toManaged_.fork
+    (queue.take.flatMap(channel.writeChunk)).forever.toManaged_.fork
 
   val maxFrameSize   = 1024
   val writeQueueSize = 10
