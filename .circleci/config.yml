@@ -18,16 +18,6 @@ jobs:
   test213_jdk8:
     docker:
       - image: hseeberger/scala-sbt:8u265_1.3.13_2.13.3
-      - image: localstack/localstack
-        environment:
-          LOCALSTACK_HOST: localstack
-          SERVICES: 'kinesis,cloudwatch,dynamodb'
-          USE_SSL: "false"
-          DEFAULT_REGION: 'us-east-1'
-          AWS_DEFAULT_REGION: "us-east-1"
-          AWS_ACCESS_KEY_ID: dummy-key
-          AWS_SECRET_ACCESS_KEY: dummy-key
-          DEBUG: "1"
 
     steps:
       - checkout
@@ -43,16 +33,6 @@ jobs:
   test213_jdk11:
     docker:
       - image: hseeberger/scala-sbt:11.0.8_1.3.13_2.13.3
-      - image: localstack/localstack
-        environment:
-          LOCALSTACK_HOST: localstack
-          SERVICES: 'kinesis,cloudwatch,dynamodb'
-          USE_SSL: "false"
-          DEFAULT_REGION: 'us-east-1'
-          AWS_DEFAULT_REGION: "us-east-1"
-          AWS_ACCESS_KEY_ID: dummy-key
-          AWS_SECRET_ACCESS_KEY: dummy-key
-          DEBUG: "1"
     steps:
       - checkout
       - restore_cache:
@@ -69,16 +49,6 @@ jobs:
   test212_jdk8:
     docker:
       - image: hseeberger/scala-sbt:8u265_1.3.13_2.12.12
-      - image: localstack/localstack
-        environment:
-          LOCALSTACK_HOST: localstack
-          SERVICES: 'kinesis,cloudwatch,dynamodb'
-          USE_SSL: "false"
-          DEFAULT_REGION: 'us-east-1'
-          AWS_DEFAULT_REGION: "us-east-1"
-          AWS_ACCESS_KEY_ID: dummy-key
-          AWS_SECRET_ACCESS_KEY: dummy-key
-          DEBUG: "1"
     steps:
       - checkout
       - restore_cache:
@@ -93,16 +63,6 @@ jobs:
   test212_jdk11:
     docker:
       - image: hseeberger/scala-sbt:11.0.7_1.3.13_2.12.12
-      - image: localstack/localstack
-        environment:
-          LOCALSTACK_HOST: localstack
-          SERVICES: 'kinesis,cloudwatch,dynamodb'
-          USE_SSL: "false"
-          DEFAULT_REGION: 'us-east-1'
-          AWS_DEFAULT_REGION: "us-east-1"
-          AWS_ACCESS_KEY_ID: dummy-key
-          AWS_SECRET_ACCESS_KEY: dummy-key
-          DEBUG: "1"
     steps:
       - checkout
       - restore_cache:
