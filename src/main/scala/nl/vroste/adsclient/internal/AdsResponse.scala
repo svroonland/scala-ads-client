@@ -3,13 +3,13 @@ package nl.vroste.adsclient.internal
 import java.time.Instant
 
 import scodec.bits.BitVector
-import scodec.{Attempt, Decoder}
+import scodec.{ Attempt, Decoder }
 
 /**
-  * Responses from the ADS server
-  *
+ * Responses from the ADS server
+ *
   * Mostly responses to commands, but also autonomously sent notifications
-  */
+ */
 sealed trait AdsResponse {
   val errorCode: Long
 }

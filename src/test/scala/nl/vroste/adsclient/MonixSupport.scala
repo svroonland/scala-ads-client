@@ -11,7 +11,7 @@ trait MonixSupport {
   implicit def taskToFuture[T](t: Task[T]): Future[T] = t.runToFuture
 
   /**
-    * Consumer that collects results in a Seq
-    */
+   * Consumer that collects results in a Seq
+   */
   def consumerToSeq[T]: Consumer[T, Seq[T]] = Consumer.foldLeft(Seq.empty[T])(_ :+ _)
 }

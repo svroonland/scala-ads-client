@@ -16,8 +16,8 @@ class ReadWriteManySpec extends BaseSpec {
   "The ADS client" must "read many variables at once" in {
     val result = for {
       var1r <- client.read(variableList)
-      data = genMyData.from(var1r)
-      _ = println(s"Var1: ${data.var1}, Var2: ${data.var2}, Var4: ${data.var4}, Var5: ${data.var5}")
+      data   = genMyData.from(var1r)
+      _      = println(s"Var1: ${data.var1}, Var2: ${data.var2}, Var4: ${data.var4}, Var5: ${data.var5}")
     } yield succeed
 
     result
@@ -34,15 +34,16 @@ class ReadWriteManySpec extends BaseSpec {
   it must "give an error when attemptign to read a variable that does not exist" in {
     val variableList = VariableList("MAIN.var1", int) +
       ("MAIN.varNotExist", string)
-    val result = for {
-      var1r <- client.read(variableList)
+    val result       = for {
+      var1r       <- client.read(variableList)
       (var1, var2) = var1r.tupled
-      _ = println(s"Var1: ${var1}, Var2: ${var2}")
+      _            = println(s"Var1: ${var1}, Var2: ${var2}")
     } yield fail
 
-    result.onErrorRecover { case AdsClientException(e) =>
-      println(s"Got ADS exception: ${e}")
-      succeed
+    result.onErrorRecover {
+      case AdsClientException(e) =>
+        println(s"Got ADS exception: ${e}")
+        succeed
     }
   }
 }

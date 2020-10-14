@@ -17,12 +17,13 @@ object AttemptUtil {
   }
 
   implicit class AttemptSequence[T](val seq: Seq[Attempt[T]]) extends AnyVal {
+
     /**
-      * Turn a Seq[Attempt[T]] into an Attempt[Seq[T]]
-      *
+     * Turn a Seq[Attempt[T]] into an Attempt[Seq[T]]
+     *
       * If any of the attempts have failed, the result will be a failed attempt
-      * @return
-      */
+     * @return
+     */
     def sequence: Attempt[Seq[T]] =
       seq.foldLeft(Attempt.successful(Seq.empty[T])) {
         case (as, a) => as.flatMap(s => a.map(s :+ _))

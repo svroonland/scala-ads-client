@@ -1,10 +1,9 @@
 package nl.vroste.adsclient.internal.codecs
 
-import nl.vroste.adsclient.{AdsCodecs, AdsState, AdsTransmissionMode, VariableHandle}
+import nl.vroste.adsclient.{ AdsCodecs, AdsState, AdsTransmissionMode, VariableHandle }
 import nl.vroste.adsclient.internal.AdsResponse
 import nl.vroste.adsclient.internal.AdsCommand
-import scodec.{Attempt, Codec, Err}
-
+import scodec.{ Attempt, Codec, Err }
 
 trait AdsCommandCodecs {
   import AdsCommand._
@@ -14,10 +13,10 @@ trait AdsCommandCodecs {
 
   implicit val adsStateCodec: Codec[AdsState] = AdsCodecs.int.xmap(AdsState.values(_), AdsState.indexOf(_).toShort)
 
-  implicit val adsTransmissionModeCodec: Codec[AdsTransmissionMode] = uint32L.xmapc[AdsTransmissionMode] {
-    l => if (l == 3L) AdsTransmissionMode.Cyclic else AdsTransmissionMode.OnChange
+  implicit val adsTransmissionModeCodec: Codec[AdsTransmissionMode] = uint32L.xmapc[AdsTransmissionMode] { l =>
+    if (l == 3L) AdsTransmissionMode.Cyclic else AdsTransmissionMode.OnChange
   } {
-    case AdsTransmissionMode.Cyclic => 3L
+    case AdsTransmissionMode.Cyclic   => 3L
     case AdsTransmissionMode.OnChange => 4L
   }
 
@@ -33,8 +32,7 @@ trait AdsCommandCodecs {
     (uint32L :: uint32L :: uint32L :: variableSizeBytesLong(uint32L, bits)).as[AdsWriteReadCommand]
 
   implicit val addDeviceNotificationCommandCodec: Codec[AdsAddDeviceNotificationCommand] =
-    (uint32L ~ uint32L ~ uint32L ~ Codec[AdsTransmissionMode] ~ uint32L ~ uint32L <~ ignore(16 * 8))
-      .flattenLeftPairs
+    (uint32L ~ uint32L ~ uint32L ~ Codec[AdsTransmissionMode] ~ uint32L ~ uint32L <~ ignore(16 * 8)).flattenLeftPairs
       .as[AdsAddDeviceNotificationCommand]
 
   implicit val deleteDeviceNotificationCommandCodec: Codec[AdsDeleteDeviceNotificationCommand] =
@@ -46,13 +44,16 @@ trait AdsCommandCodecs {
       writeCommandCodec :+:
       readCommandCodec :+:
       deleteDeviceNotificationCommandCodec
-    ).choice.as[AdsCommand]
+  ).choice.as[AdsCommand]
 
   def codecForCommandId(commandId: Int): Codec[Either[AdsCommand, AdsResponse]] =
-    codec.exmap(r => Attempt.successful(Left(r)), {
-      case Left(r) => Attempt.successful(r)
-      case Right(_) => Attempt.failure(Err(s"not a value of type AdsCommand"))
-    })
+    codec.exmap(
+      r => Attempt.successful(Left(r)),
+      {
+        case Left(r)  => Attempt.successful(r)
+        case Right(_) => Attempt.failure(Err(s"not a value of type AdsCommand"))
+      }
+    )
 }
 
 object AdsCommandCodecs extends AdsCommandCodecs

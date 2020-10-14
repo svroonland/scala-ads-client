@@ -4,7 +4,7 @@ import nl.vroste.adsclient.internal.AdsCommand._
 import nl.vroste.adsclient.internal.codecs.AdsSumCommandCodecs
 import scodec.bits.BitVector
 import scodec.codecs._
-import scodec.{Attempt, Codec}
+import scodec.{ Attempt, Codec }
 import nl.vroste.adsclient.internal.util.CodecUtil.BitVectorExtensions
 
 // SUM COMMANDS
@@ -31,8 +31,9 @@ object AdsSumCommand extends AdsSumCommandCodecs {
 
   case class AdsSumWriteCommand(commands: Seq[AdsWriteCommand], values: BitVector) {
     def toAdsCommand: Attempt[AdsWriteReadCommand] = {
-      val requestParts = commands.map(c => SumWriteRequestPart(c.indexGroup, c.indexOffset, length = c.values.lengthInBytes))
-      val valueBits = BitVector.concat(commands.map(_.values))
+      val requestParts =
+        commands.map(c => SumWriteRequestPart(c.indexGroup, c.indexOffset, length = c.values.lengthInBytes))
+      val valueBits    = BitVector.concat(commands.map(_.values))
 
       for {
         requestPartsBits <- list(Codec[SumWriteRequestPart]).encode(requestParts.toList)
@@ -49,8 +50,9 @@ object AdsSumCommand extends AdsSumCommandCodecs {
   // encoded as the payload. The values to be written are encoded at the end
   case class AdsSumWriteReadCommand(commands: Seq[AdsWriteReadCommand]) {
     def toAdsCommand: Attempt[AdsWriteReadCommand] = {
-      val requestParts = commands.map(c => SumReadWriteRequestPart(c.indexGroup, c.indexOffset, c.readLength, c.values.lengthInBytes))
-      val valueBits = BitVector.concat(commands.map(_.values))
+      val requestParts =
+        commands.map(c => SumReadWriteRequestPart(c.indexGroup, c.indexOffset, c.readLength, c.values.lengthInBytes))
+      val valueBits    = BitVector.concat(commands.map(_.values))
 
       for {
         requestPartsBits <- list(Codec[SumReadWriteRequestPart]).encode(requestParts.toList)
@@ -70,6 +72,6 @@ object AdsSumCommand extends AdsSumCommandCodecs {
 
   case class SumReadRequestPart(indexGroup: Long, indexOffset: Long, length: Long)
 
-  val errorCodeSize = 4
+  val errorCodeSize    = 4
   val resultLengthSize = 4
 }

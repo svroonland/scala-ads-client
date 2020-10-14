@@ -6,16 +6,16 @@ import java.util.concurrent.atomic.AtomicInteger
 import nl.vroste.adsclient._
 import nl.vroste.adsclient.internal.AdsCommand._
 import nl.vroste.adsclient.internal.AdsResponse._
-import nl.vroste.adsclient.internal.AdsSumCommand.{AdsSumReadCommand, AdsSumWriteCommand, AdsSumWriteReadCommand}
-import nl.vroste.adsclient.internal.codecs.{AdsCommandCodecs, AmsCodecs}
+import nl.vroste.adsclient.internal.AdsSumCommand.{ AdsSumReadCommand, AdsSumWriteCommand, AdsSumWriteReadCommand }
+import nl.vroste.adsclient.internal.codecs.{ AdsCommandCodecs, AmsCodecs }
 import nl.vroste.adsclient.internal.util.AttemptUtil._
 import monix.eval.Task
 import monix.execution.Scheduler
 import monix.nio.tcp.AsyncSocketChannelClient
 import monix.reactive.Observable
 import monix.reactive.observables.ConnectableObservable
-import scodec.bits.{BitVector, ByteVector}
-import scodec.{Attempt, Codec}
+import scodec.bits.{ BitVector, ByteVector }
+import scodec.{ Attempt, Codec }
 import shapeless.HList
 
 import scala.reflect.ClassTag
@@ -23,51 +23,58 @@ import scala.reflect.ClassTag
 case class AdsNotificationSampleWithTimestamp(handle: Long, timestamp: Instant, data: BitVector)
 
 /**
-  * Responsible for encoding and executing single ADS commands and decoding their response
-  *
+ * Responsible for encoding and executing single ADS commands and decoding their response
+ *
   * Also provides all device notifications as an Observable
-  *
+ *
   * An inner implementation layer of [[AdsClient]]
-  *
+ *
   * @param scheduler Execution context for reading responses
-  */
-class AdsCommandClient(settings: AdsConnectionSettings, socketClient: AsyncSocketChannelClient)(
-  implicit scheduler: Scheduler) extends AmsCodecs {
+ */
+class AdsCommandClient(settings: AdsConnectionSettings, socketClient: AsyncSocketChannelClient)(implicit
+  scheduler: Scheduler
+) extends AmsCodecs {
 
   import AdsCommandClient._
   import nl.vroste.adsclient.internal.codecs.AdsCommandCodecs.variableHandleCodec
 
   def getVariableHandle(varName: String): Task[VariableHandle] =
     for {
-      command <- getVariableHandleCommand(varName).toTask
+      command  <- getVariableHandleCommand(varName).toTask
       response <- runCommand[AdsWriteReadCommandResponse](command)
-      handle <- response.decode[VariableHandle].toTask
+      handle   <- response.decode[VariableHandle].toTask
     } yield handle
 
   def releaseVariableHandle(handle: VariableHandle): Task[Unit] =
     for {
       command <- releaseVariableHandleCommand(handle).toTask
-      _ <- runCommand[AdsWriteCommandResponse](command)
+      _       <- runCommand[AdsWriteCommandResponse](command)
     } yield ()
 
-  def getNotificationHandle(variableHandle: VariableHandle,
-                            length: Long,
-                            maxDelay: Int,
-                            cycleTime: Int): Task[NotificationHandle] =
+  def getNotificationHandle(
+    variableHandle: VariableHandle,
+    length: Long,
+    maxDelay: Int,
+    cycleTime: Int
+  ): Task[NotificationHandle] =
     getNotificationHandle(IndexGroups.ReadWriteSymValByHandle, variableHandle.value, length, maxDelay, cycleTime)
 
-  def getNotificationHandle(indexGroup: Long,
-                            indexOffset: Long,
-                            length: Long,
-                            maxDelay: Int,
-                            cycleTime: Int): Task[NotificationHandle] =
+  def getNotificationHandle(
+    indexGroup: Long,
+    indexOffset: Long,
+    length: Long,
+    maxDelay: Int,
+    cycleTime: Int
+  ): Task[NotificationHandle] =
     runCommand[AdsAddDeviceNotificationCommandResponse] {
-      AdsAddDeviceNotificationCommand(indexGroup,
+      AdsAddDeviceNotificationCommand(
+        indexGroup,
         indexOffset,
         length,
         AdsTransmissionMode.OnChange,
         maxDelay,
-        cycleTime)
+        cycleTime
+      )
     }.map(_.notificationHandle)
       .map(NotificationHandle)
 
@@ -78,50 +85,56 @@ class AdsCommandClient(settings: AdsConnectionSettings, socketClient: AsyncSocke
 
   def writeToVariable(variableHandle: VariableHandle, value: BitVector): Task[Unit] =
     runCommand[AdsWriteCommandResponse] {
-      AdsWriteCommand(indexGroup = IndexGroups.ReadWriteSymValByHandle, indexOffset = variableHandle.value, values = value)
+      AdsWriteCommand(
+        indexGroup = IndexGroups.ReadWriteSymValByHandle,
+        indexOffset = variableHandle.value,
+        values = value
+      )
     }.map(_ => ())
 
   def read(indexGroup: Long, indexOffset: Long, size: Long): Task[BitVector] =
     for {
-      command <- readCommand(indexGroup, indexOffset, size).toTask
+      command  <- readCommand(indexGroup, indexOffset, size).toTask
       response <- runCommand[AdsReadCommandResponse](command)
     } yield response.data
 
-  def close(): Task[Unit] = {
+  def close(): Task[Unit] =
     for {
       _ <- socketClient.stopReading()
       _ <- socketClient.stopWriting()
       _ <- socketClient.close()
     } yield ()
-  }
 
   /**
-    * Run a command, await the response to the command and return it
-    */
-  private[adsclient] def runCommand[R <: AdsResponse : ClassTag](command: AdsCommand): Task[R] = for {
-    invokeId <- generateInvokeId
-    packet = createPacket(command, invokeId)
-    bytes <- Codec[AmsPacket].encode(packet).toTask
-    consumer <- socketClient.tcpConsumer
-    writeCommand = consumer.apply(Observable.pure(bytes.toByteArray))
-    _ <- Task.eval(println(s"Running command ${command}"))
-    // Execute in parallel to avoid race conditions
-    response <- Task.parMap2(writeCommand, awaitResponse(invokeId))(keepSecond)
-    _ <- checkResponse(response)
-  } yield response
+   * Run a command, await the response to the command and return it
+   */
+  private[adsclient] def runCommand[R <: AdsResponse: ClassTag](command: AdsCommand): Task[R] =
+    for {
+      invokeId    <- generateInvokeId
+      packet       = createPacket(command, invokeId)
+      bytes       <- Codec[AmsPacket].encode(packet).toTask
+      consumer    <- socketClient.tcpConsumer
+      writeCommand = consumer.apply(Observable.pure(bytes.toByteArray))
+      _           <- Task.eval(println(s"Running command ${command}"))
+      // Execute in parallel to avoid race conditions
+      response    <- Task.parMap2(writeCommand, awaitResponse(invokeId))(keepSecond)
+      _           <- checkResponse(response)
+    } yield response
 
   def createPacket(command: AdsCommand, invokeId: Int): AmsPacket =
-    AmsPacket(AmsHeader(
-      amsNetIdTarget = settings.amsNetIdTarget,
-      amsPortTarget = settings.amsPortTarget,
-      amsNetIdSource = settings.amsNetIdSource,
-      amsPortSource = settings.amsPortSource,
-      commandId = AdsCommand.commandId(command),
-      stateFlags = 4, // ADS command
-      errorCode = 0,
-      invokeId = invokeId,
-      data = Left(command)
-    ))
+    AmsPacket(
+      AmsHeader(
+        amsNetIdTarget = settings.amsNetIdTarget,
+        amsPortTarget = settings.amsPortTarget,
+        amsNetIdSource = settings.amsNetIdSource,
+        amsPortSource = settings.amsPortSource,
+        commandId = AdsCommand.commandId(command),
+        stateFlags = 4, // ADS command
+        errorCode = 0,
+        invokeId = invokeId,
+        data = Left(command)
+      )
+    )
 
   def awaitResponse[R](invokeId: Int)(implicit classTag: ClassTag[R]): Task[R] =
     receivedPackets
@@ -129,19 +142,17 @@ class AdsCommandClient(settings: AdsConnectionSettings, socketClient: AsyncSocke
       .flatMap(_.header.data match {
         case Right(r) if r.getClass == classTag.runtimeClass =>
           Observable.pure(r.asInstanceOf[R])
-        case r =>
-          Observable.raiseError(
-            new IllegalArgumentException(s"Unexpected response $r"))
+        case r                                               =>
+          Observable.raiseError(new IllegalArgumentException(s"Unexpected response $r"))
       })
       .firstL
       .timeout(settings.timeout)
 
   def checkErrorCode(errorCode: Long): Task[Unit] =
-    if (errorCode != 0L) {
+    if (errorCode != 0L)
       Task.raiseError(AdsClientException(s"ADS error 0x${errorCode.toHexString}"))
-    } else {
+    else
       Task.unit
-    }
 
   def checkErrorCodes(errorCodes: Seq[Long]): Task[Unit] =
     Task.traverse(errorCodes)(checkErrorCode).map(_ => ())
@@ -161,10 +172,12 @@ class AdsCommandClient(settings: AdsConnectionSettings, socketClient: AsyncSocke
       .doOnNext { bits =>
         Task.eval(println(s"Got packet ${bits.toHex}"))
       }
-      .flatMap(bits => Observable.fromTask(Codec.decode[AmsPacket](bits).toTask).onErrorRecoverWith {
-        case ex@AdsClientException(_) =>
-          Observable.raiseError(ex)
-      })
+      .flatMap(bits =>
+        Observable.fromTask(Codec.decode[AmsPacket](bits).toTask).onErrorRecoverWith {
+          case ex @ AdsClientException(_) =>
+            Observable.raiseError(ex)
+        }
+      )
       .map(_.value)
       .publish
 
@@ -177,22 +190,24 @@ class AdsCommandClient(settings: AdsConnectionSettings, socketClient: AsyncSocke
       .flatMap(Observable.fromIterable)
 
   lazy val notificationSamples: Observable[AdsNotificationSampleWithTimestamp] =
-    responses
-      .collect { case r@AdsNotificationResponse(_) => r }
-      .map { r =>
-        for {
-          stamp <- r.stamps
-          sample <- stamp.samples
-        } yield AdsNotificationSampleWithTimestamp(sample.handle, stamp.timestamp, sample.data)
-      }
-      .flatMap(Observable.fromIterable)
+    responses.collect { case r @ AdsNotificationResponse(_) => r }.map { r =>
+      for {
+        stamp  <- r.stamps
+        sample <- stamp.samples
+      } yield AdsNotificationSampleWithTimestamp(sample.handle, stamp.timestamp, sample.data)
+    }.flatMap(Observable.fromIterable)
 }
 
 object AdsCommandClient extends AdsCommandCodecs {
   def getVariableHandleCommand(varName: String): Attempt[AdsWriteReadCommand] =
     for {
       encodedVarName <- AdsCodecs.string.encode(varName)
-    } yield AdsWriteReadCommand(indexGroup = IndexGroups.GetSymHandleByName, indexOffset = 0x00000000, readLength = 4, values = encodedVarName)
+    } yield AdsWriteReadCommand(
+      indexGroup = IndexGroups.GetSymHandleByName,
+      indexOffset = 0x00000000,
+      readLength = 4,
+      values = encodedVarName
+    )
 
   def releaseVariableHandleCommand(handle: VariableHandle): Attempt[AdsWriteCommand] =
     for {
@@ -215,17 +230,23 @@ object AdsCommandClient extends AdsCommandCodecs {
   def createVariableHandlesCommand(variables: Seq[String]): Attempt[AdsSumWriteReadCommand] =
     for {
       encodedVarNames <- variables.map(AdsCodecs.string.encode).sequence
-      commands = encodedVarNames.map(AdsWriteReadCommand(IndexGroups.GetSymHandleByName, indexOffset = 0x00000000, readLength = 4, _))
+      commands         = encodedVarNames.map(
+                   AdsWriteReadCommand(IndexGroups.GetSymHandleByName, indexOffset = 0x00000000, readLength = 4, _)
+                 )
     } yield AdsSumWriteReadCommand(commands)
 
   def readVariablesCommand(handlesAndLengths: Seq[(VariableHandle, Long)]): Attempt[AdsSumReadCommand] =
     for {
-      subCommands <- handlesAndLengths
-        .map { case (handle, sizeInBits) => (handle, sizeInBits / 8) }
-        .map((readVariableCommand _).tupled).sequence
+      subCommands <- handlesAndLengths.map { case (handle, sizeInBits) => (handle, sizeInBits / 8) }
+                       .map((readVariableCommand _).tupled)
+                       .sequence
     } yield AdsSumReadCommand(subCommands)
 
-  def writeVariablesCommand[T <: HList](handlesAndLengths: Seq[(VariableHandle, Long)], codec: Codec[T], value: T): Attempt[AdsSumWriteCommand] = {
+  def writeVariablesCommand[T <: HList](
+    handlesAndLengths: Seq[(VariableHandle, Long)],
+    codec: Codec[T],
+    value: T
+  ): Attempt[AdsSumWriteCommand] = {
     val (handles, lengthsInBits) = handlesAndLengths.unzip
     for {
       encodedValue <- codec.encode(value)
@@ -238,15 +259,17 @@ object AdsCommandClient extends AdsCommandCodecs {
   def releaseHandlesCommand(handles: Seq[VariableHandle]): Attempt[AdsSumWriteCommand] =
     for {
       subCommands <- handles.map(releaseVariableHandleCommand).sequence
-      values = BitVector.concat(subCommands.map(_.values))
+      values       = BitVector.concat(subCommands.map(_.values))
     } yield AdsSumWriteCommand(subCommands, values)
 
   def splitBitVectorAtPositions(bitVector: BitVector, lengthsInBits: List[Long]): List[BitVector] =
-    lengthsInBits.foldLeft((bitVector, List.empty[BitVector])) { case ((remaining, acc), length) =>
-      val (value, newRemaining) = remaining.splitAt(length)
-      (newRemaining, acc :+ value)
-    }._2
-
+    lengthsInBits
+      .foldLeft((bitVector, List.empty[BitVector])) {
+        case ((remaining, acc), length) =>
+          val (value, newRemaining) = remaining.splitAt(length)
+          (newRemaining, acc :+ value)
+      }
+      ._2
 
   def keepSecond[T, U](first: T, second: U): U = second
 }
