@@ -13,9 +13,9 @@ import scodec.Attempt.Successful
 import scodec.bits.BitVector
 import scodec.{ Attempt, Codec, DecodeResult, Err }
 import shapeless.HList
+import zio._
 import zio.clock.Clock
 import zio.stream.ZStream
-import zio._
 
 import scala.reflect.ClassTag
 
@@ -356,4 +356,39 @@ object AdsCommandClient extends AdsCommandCodecs with AmsCodecs {
           ZIO.succeed((availableBits, Seq.empty[S]))
       }
       .mapConcat(Chunk.fromIterable(_))
+}
+
+object ZStreamScodecOps {
+//  /**
+//   * Decode a stream of S from a byte stream using the Codec for S
+//   * @param stream
+//   * @param decodingError How to encode
+//   * @tparam R
+//   * @tparam E
+//   * @tparam E1
+//   * @tparam S
+//   * @return
+//   */
+//  def decodeStream[R, E, E1 >: E, S: Codec](
+//    stream: ZStream[R, E, Chunk[Byte]],
+//    decodingError: Err => E1
+//  ): ZStream[R, E1, S] =
+//    stream
+//      .map(chunk => BitVector(chunk.toArray))
+//      //      .tap(bits => ZIO.effectTotal(println(s"Got packet ${bits.toHex}")))
+//      .mapAccumM[Any, E1, BitVector, Seq[S]](BitVector.empty) { (acc, curr) =>
+//        val availableBits = acc ++ curr
+//        if (availableBits.size >= implicitly[Codec[S]].sizeBound.lowerBound)
+//          Codec.decodeCollect[Seq, S](implicitly[Codec[S]], None)(availableBits) match {
+//            case Successful(DecodeResult(frames, remainder)) =>
+//              ZIO.succeed((remainder, frames))
+//            case Attempt.Failure(_: Err.InsufficientBits)    =>
+//              ZIO.succeed((availableBits, Seq.empty[S]))
+//            case Attempt.Failure(cause)                      =>
+//              ZIO.fail(decodingError(cause))
+//          }
+//        else
+//          ZIO.succeed((availableBits, Seq.empty[S]))
+//      }
+//      .mapConcat(Chunk.fromIterable)
 }

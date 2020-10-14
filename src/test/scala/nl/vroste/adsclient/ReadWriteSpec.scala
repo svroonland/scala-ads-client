@@ -73,15 +73,15 @@ object ReadWriteSpec extends DefaultRunnableSpec {
         ZManaged.service[AdsClient].use { client =>
           for {
             result <- client.read("MAIN.varNotExist", int).flip
-          } yield assert(result)(isSubtype[AdsClientException](anything))
+          } yield assert(result)(isSubtype[AdsErrorResponse](anything))
         }
       },
       testM("give errors when reading a variable of the wrong type") {
         ZManaged.service[AdsClient].use { client =>
           for {
             result <- client.read("MAIN.var1", lreal).flip
-          } yield assert(result)(isSubtype[AdsClientException](anything))
+          } yield assert(result)(isSubtype[DecodingError](anything))
         }
       }
-    ).provideCustomLayerShared(Clock.live >>> AdsClient.connect(TestUtil.settings).toLayer.orDie)
+    ).provideCustomLayerShared(Clock.live >+> AdsClient.connect(TestUtil.settings).toLayer.orDie)
 }
