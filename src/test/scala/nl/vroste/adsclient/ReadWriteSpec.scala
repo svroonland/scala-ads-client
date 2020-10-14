@@ -7,6 +7,7 @@ import scodec.Codec
 import zio.Task
 import zio.clock.Clock
 import zio.test.Assertion._
+import zio.test.TestAspect.nonFlaky
 import zio.test._
 
 case class MyStruct(myInt: Short, myBool: Boolean)
@@ -65,5 +66,5 @@ object ReadWriteSpec extends DefaultRunnableSpec {
           result <- AdsClient.read("MAIN.var1", lreal).flip
         } yield assert(result)(isSubtype[DecodingError](anything))
       }
-    ).provideCustomLayerShared(Clock.live >+> AdsClient.connect(TestUtil.settings).toLayer.orDie)
+    ).provideCustomLayerShared(Clock.live >+> AdsClient.connect(TestUtil.settings).toLayer.orDie) @@ nonFlaky
 }
