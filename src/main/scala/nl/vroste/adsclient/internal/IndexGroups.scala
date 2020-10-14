@@ -1,12 +1,12 @@
 package nl.vroste.adsclient.internal
 
 object IndexGroups {
-  val GetSymHandleByName = 0xF003
-  val ReadWriteSymValByHandle = 0xF005
-  val ReleaseSymHandle = 0xF006
-  val SumRead = 0xF080
-  val SumWrite = 0xF081
-  val SumWriteRead = 0xF082
+  val GetSymHandleByName      = 0xf003
+  val ReadWriteSymValByHandle = 0xf005
+  val ReleaseSymHandle        = 0xf006
+  val SumRead                 = 0xf080
+  val SumWrite                = 0xf081
+  val SumWriteRead            = 0xf082
 
-  val AdsState = 0xF100
+  val AdsState = 0xf100
 }

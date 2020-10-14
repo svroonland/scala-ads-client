@@ -1,6 +1,6 @@
 package nl.vroste.adsclient.internal.codecs
 
-import java.time.{Duration, Instant}
+import java.time.{ Duration, Instant }
 import java.time.temporal.ChronoUnit
 
 import scodec.Codec
