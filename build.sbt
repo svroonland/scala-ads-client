@@ -1,10 +1,14 @@
 import Dependencies._
 
+val mainScala = "2.13.3"
+val allScala  = Seq("2.12.12", mainScala)
+
 lazy val root = (project in file(".")).settings(
   inThisBuild(
     List(
       organization := "nl.vroste",
-      scalaVersion := "2.12.12",
+      scalaVersion := mainScala,
+      crossScalaVersions := allScala,
       version := "0.1.0-SNAPSHOT",
       name := "scala-ads-client"
     )
