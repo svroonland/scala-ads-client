@@ -65,7 +65,7 @@ trait AdsCodecs {
             Attempt.failure(Err(s"String $s is longer than maximum string length ${maxLength}")),
         identity
       )
-      .withSizeBound(SizeBound.exact((maxLength + 1) * 8))
+      .withSizeBound(SizeBound.exact((maxLength + 1) * 8L))
 
   /**
    * Codec for an array of variables of a fixed length

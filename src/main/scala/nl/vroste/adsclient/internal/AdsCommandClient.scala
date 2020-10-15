@@ -1,22 +1,20 @@
 package nl.vroste.adsclient.internal
 
 import java.time.Instant
-import java.util.concurrent.atomic.AtomicInteger
 
-import nl.vroste.adsclient._
 import nl.vroste.adsclient.internal.AdsCommand._
+import nl.vroste.adsclient.internal.AdsCommandClient.{ NotificationListeners, ResponseListeners }
 import nl.vroste.adsclient.internal.AdsResponse._
 import nl.vroste.adsclient.internal.AdsSumCommand.{ AdsSumReadCommand, AdsSumWriteCommand, AdsSumWriteReadCommand }
 import nl.vroste.adsclient.internal.codecs.{ AdsCommandCodecs, AmsCodecs }
 import nl.vroste.adsclient.internal.util.AttemptUtil._
-import monix.eval.Task
-import monix.execution.Scheduler
-import monix.nio.tcp.AsyncSocketChannelClient
-import monix.reactive.Observable
-import monix.reactive.observables.ConnectableObservable
-import scodec.bits.{ BitVector, ByteVector }
+import nl.vroste.adsclient.{ AdsClientError, _ }
+import scodec.bits.BitVector
 import scodec.{ Attempt, Codec }
 import shapeless.HList
+import zio._
+import zio.clock.Clock
+import zio.stream.ZStream
 
 import scala.reflect.ClassTag
 
@@ -25,47 +23,51 @@ case class AdsNotificationSampleWithTimestamp(handle: Long, timestamp: Instant, 
 /**
  * Responsible for encoding and executing single ADS commands and decoding their response
  *
- * Also provides all device notifications as an Observable
+ * Also provides all device notifications as an Stream
  *
  * An inner implementation layer of [[AdsClient]]
  *
- * @param scheduler Execution context for reading responses
+ * @param settings
+ * @param writeQueue Queue for writing to the ADS server
+ * @param invokeId Mutable invokeID counter
+ * @param notifications Per-handle queue for notification messages
+ * @param responsePromises Per-invokeId promise for a response
  */
-class AdsCommandClient(settings: AdsConnectionSettings, socketClient: AsyncSocketChannelClient)(implicit
-  scheduler: Scheduler
+class AdsCommandClient(
+  settings: AdsConnectionSettings,
+  writeQueue: Queue[Chunk[Byte]],
+  invokeId: Ref[Int],
+  val notifications: NotificationListeners,
+  responsePromises: ResponseListeners
 ) extends AmsCodecs {
 
   import AdsCommandClient._
   import nl.vroste.adsclient.internal.codecs.AdsCommandCodecs.variableHandleCodec
 
-  def getVariableHandle(varName: String): Task[VariableHandle] =
-    for {
-      command  <- getVariableHandleCommand(varName).toTask
-      response <- runCommand[AdsWriteReadCommandResponse](command)
-      handle   <- response.decode[VariableHandle].toTask
-    } yield handle
+  def getVariableHandle(varName: String): AdsT[VariableHandle] =
+    getVariableHandleCommand(varName).toZio(EncodingError) >>=
+      runCommand[AdsWriteReadCommandResponse] >>=
+      (_.decode[VariableHandle].toZio(DecodingError))
 
-  def releaseVariableHandle(handle: VariableHandle): Task[Unit] =
-    for {
-      command <- releaseVariableHandleCommand(handle).toTask
-      _       <- runCommand[AdsWriteCommandResponse](command)
-    } yield ()
+  def releaseVariableHandle(handle: VariableHandle): AdsT[Unit] =
+    releaseVariableHandleCommand(handle).toZio(EncodingError) >>=
+      (runCommand[AdsWriteCommandResponse](_).unit)
 
   def getNotificationHandle(
     variableHandle: VariableHandle,
     length: Long,
-    maxDelay: Int,
-    cycleTime: Int
-  ): Task[NotificationHandle] =
+    maxDelay: Long,
+    cycleTime: Long
+  ): AdsT[NotificationHandle] =
     getNotificationHandle(IndexGroups.ReadWriteSymValByHandle, variableHandle.value, length, maxDelay, cycleTime)
 
   def getNotificationHandle(
     indexGroup: Long,
     indexOffset: Long,
     length: Long,
-    maxDelay: Int,
-    cycleTime: Int
-  ): Task[NotificationHandle] =
+    maxDelay: Long,
+    cycleTime: Long
+  ): AdsT[NotificationHandle] =
     runCommand[AdsAddDeviceNotificationCommandResponse] {
       AdsAddDeviceNotificationCommand(
         indexGroup,
@@ -78,47 +80,39 @@ class AdsCommandClient(settings: AdsConnectionSettings, socketClient: AsyncSocke
     }.map(_.notificationHandle)
       .map(NotificationHandle)
 
-  def deleteNotificationHandle(notificationHandle: NotificationHandle): Task[Unit] =
+  def deleteNotificationHandle(notificationHandle: NotificationHandle): AdsT[Unit] =
     runCommand[AdsDeleteDeviceNotificationCommandResponse] {
       AdsDeleteDeviceNotificationCommand(notificationHandle.value)
-    }.map(_ => ())
+    }.unit
 
-  def writeToVariable(variableHandle: VariableHandle, value: BitVector): Task[Unit] =
+  def writeToVariable(variableHandle: VariableHandle, value: BitVector): AdsT[Unit] =
     runCommand[AdsWriteCommandResponse] {
       AdsWriteCommand(
         indexGroup = IndexGroups.ReadWriteSymValByHandle,
         indexOffset = variableHandle.value,
         values = value
       )
-    }.map(_ => ())
+    }.unit
 
-  def read(indexGroup: Long, indexOffset: Long, size: Long): Task[BitVector] =
+  def read(indexGroup: Long, indexOffset: Long, size: Long): AdsT[BitVector] =
     for {
-      command  <- readCommand(indexGroup, indexOffset, size).toTask
+      command  <- readCommand(indexGroup, indexOffset, size).toZio(EncodingError)
       response <- runCommand[AdsReadCommandResponse](command)
     } yield response.data
-
-  def close(): Task[Unit] =
-    for {
-      _ <- socketClient.stopReading()
-      _ <- socketClient.stopWriting()
-      _ <- socketClient.close()
-    } yield ()
 
   /**
    * Run a command, await the response to the command and return it
    */
-  private[adsclient] def runCommand[R <: AdsResponse: ClassTag](command: AdsCommand): Task[R] =
+  private[adsclient] def runCommand[R <: AdsResponse: ClassTag](command: AdsCommand): AdsT[R] =
     for {
-      invokeId    <- generateInvokeId
-      packet       = createPacket(command, invokeId)
-      bytes       <- Codec[AmsPacket].encode(packet).toTask
-      consumer    <- socketClient.tcpConsumer
-      writeCommand = consumer.apply(Observable.pure(bytes.toByteArray))
-      _           <- Task.eval(println(s"Running command ${command}"))
-      // Execute in parallel to avoid race conditions
-      response    <- Task.parMap2(writeCommand, awaitResponse(invokeId))(keepSecond)
-      _           <- checkResponse(response)
+      invokeId <- generateInvokeId
+      packet    = createPacket(command, invokeId)
+      bytes    <- Codec[AmsPacket].encode(packet).toZio[Clock, AdsClientError](EncodingError)
+      _        <- ZIO(println(s"Running command ${command}")).orDie
+      response <- responsePromises.registerListener(invokeId).use { p =>
+                    writeQueue.offer(Chunk.fromIterable(bytes.toByteArray)) *> awaitResponse(p)
+                  }
+      _        <- checkResponse(response)
     } yield response
 
   def createPacket(command: AdsCommand, invokeId: Int): AmsPacket =
@@ -136,69 +130,114 @@ class AdsCommandClient(settings: AdsConnectionSettings, socketClient: AsyncSocke
       )
     )
 
-  def awaitResponse[R](invokeId: Int)(implicit classTag: ClassTag[R]): Task[R] =
-    receivedPackets
-      .filter(_.header.invokeId == invokeId)
-      .flatMap(_.header.data match {
-        case Right(r) if r.getClass == classTag.runtimeClass =>
-          Observable.pure(r.asInstanceOf[R])
-        case r                                               =>
-          Observable.raiseError(new IllegalArgumentException(s"Unexpected response $r"))
-      })
-      .firstL
-      .timeout(settings.timeout)
+  def awaitResponse[R](p: Promise[AdsClientError, AmsPacket])(implicit classTag: ClassTag[R]): AdsT[R] =
+    for {
+      response <- p.await.timeoutFail(ResponseTimeout)(settings.timeout)
+      result   <- response.header.data match {
+                    case Right(r) if r.getClass == classTag.runtimeClass =>
+                      ZIO.succeed(r.asInstanceOf[R])
+                    case r @ _                                           =>
+                      ZIO.fail[AdsClientError](UnexpectedResponse)
+                  }
+    } yield result
 
-  def checkErrorCode(errorCode: Long): Task[Unit] =
-    if (errorCode != 0L)
-      Task.raiseError(AdsClientException(s"ADS error 0x${errorCode.toHexString}"))
-    else
-      Task.unit
+  def checkErrorCode(errorCode: Long): AdsT[Unit] =
+    ZIO.fail(AdsErrorResponse(errorCode)).unless(errorCode == 0L)
 
-  def checkErrorCodes(errorCodes: Seq[Long]): Task[Unit] =
-    Task.traverse(errorCodes)(checkErrorCode).map(_ => ())
+  def checkErrorCodes(errorCodes: Seq[Long]): AdsT[Unit] =
+    ZIO.foreach_(errorCodes)(checkErrorCode)
 
-  def checkResponse(r: AdsResponse): Task[Unit] = checkErrorCode(r.errorCode)
+  def checkResponse(r: AdsResponse): AdsT[Unit] = checkErrorCode(r.errorCode)
 
-  private val lastInvokeId: AtomicInteger = new AtomicInteger(1)
-  private val generateInvokeId: Task[Int] = Task.eval {
-    lastInvokeId.getAndIncrement()
-  }
-
-  private lazy val receivedPackets: ConnectableObservable[AmsPacket] =
-    Observable
-      .fromTask(socketClient.tcpObservable.memoize)
-      .flatten
-      .map(BitVector.apply)
-      .doOnNext { bits =>
-        Task.eval(println(s"Got packet ${bits.toHex}"))
-      }
-      .flatMap(bits =>
-        Observable.fromTask(Codec.decode[AmsPacket](bits).toTask).onErrorRecoverWith {
-          case ex @ AdsClientException(_) =>
-            Observable.raiseError(ex)
-        }
-      )
-      .map(_.value)
-      .publish
-
-  receivedPackets.connect()
-
-  // Observable of all responses from the ADS server
-  private lazy val responses: Observable[AdsResponse] =
-    receivedPackets
-      .map(_.header.data.toSeq)
-      .flatMap(Observable.fromIterable)
-
-  lazy val notificationSamples: Observable[AdsNotificationSampleWithTimestamp] =
-    responses.collect { case r @ AdsNotificationResponse(_) => r }.map { r =>
-      for {
-        stamp  <- r.stamps
-        sample <- stamp.samples
-      } yield AdsNotificationSampleWithTimestamp(sample.handle, stamp.timestamp, sample.data)
-    }.flatMap(Observable.fromIterable)
+  private val generateInvokeId: UIO[Int] = invokeId.updateAndGet(_ + 1)
 }
 
-object AdsCommandClient extends AdsCommandCodecs {
+object AdsCommandClient extends AdsCommandCodecs with AmsCodecs {
+
+  class NotificationListeners(queues: Ref[Map[Long, Queue[AdsNotificationSampleWithTimestamp]]]) {
+    def registerQueue(handle: Long): ZManaged[Any, Nothing, Queue[AdsNotificationSampleWithTimestamp]] =
+      for {
+        queue <- Queue.unbounded[AdsNotificationSampleWithTimestamp].toManaged(_.shutdown)
+        _     <- queues
+                   .update(_ + (handle -> queue))
+                   .toManaged(_ => queues.update(_ - handle))
+      } yield queue
+  }
+
+  class ResponseListeners(listeners: Ref[Map[Int, Promise[AdsClientError, AmsPacket]]]) {
+    def registerListener(invokeId: Int): ZManaged[Any, Nothing, Promise[AdsClientError, AmsPacket]] =
+      for {
+        promise <- Promise.make[AdsClientError, AmsPacket].toManaged_
+        _       <- listeners
+                     .update(_ + (invokeId -> promise))
+                     .toManaged(_ => listeners.update(_ - invokeId))
+      } yield promise
+  }
+
+  /**
+   * Managed background process that processes incoming data by:
+   *
+   * 1. Completing promises for expected incoming responses (by invoke ID)
+   * 2. Putting incoming notifications in the right queue (by notification handle)
+   *
+   * @return
+   */
+  def runLoop(
+    inputStream: ZStream[Clock, Exception, Byte]
+  ): ZManaged[Clock, Nothing, (ResponseListeners, NotificationListeners)] =
+    for {
+      substreams <- decodeStream(inputStream)(amsPacketCodec).broadcast(2, 10)
+
+      responsePromises   <- Ref.make[Map[Int, Promise[AdsClientError, AmsPacket]]](Map.empty).toManaged_
+      notificationQueues <- Ref.make[Map[Long, Queue[AdsNotificationSampleWithTimestamp]]](Map.empty).toManaged_
+
+      // Completes a promise for each received packet depending on its invokeId
+      responseProcessLoop = substreams(0).foreach { packet =>
+                              for {
+                                promises  <- responsePromises.get
+                                promiseOpt = promises.get(packet.header.invokeId)
+                                _         <- promiseOpt.map(_.succeed(packet)).getOrElse(ZIO.unit)
+                              } yield ()
+                            }
+
+      notificationSamples                                    = {
+        // Stream of all responses from the ADS server
+        val responses: ZStream[Clock, AdsClientError, AdsResponse] =
+          substreams(1)
+            .map(_.header.data.toSeq)
+            .mapConcat(Chunk.fromIterable)
+
+        responses.collect { case r @ AdsNotificationResponse(_) => r }.map { r =>
+          for {
+            stamp  <- r.stamps
+            sample <- stamp.samples
+          } yield AdsNotificationSampleWithTimestamp(sample.handle, stamp.timestamp, sample.data)
+        }.mapConcat(Chunk.fromIterable)
+      }
+
+      // Task that pushes notifications to the queue for the given notification handle
+      notificationsToQueue: ZIO[Clock, AdsClientError, Unit] = notificationSamples.foreach { n =>
+                                                                 (for {
+                                                                   queues <- notificationQueues.get
+                                                                   queue  <- ZIO
+                                                                               .fromOption(queues.get(n.handle))
+                                                                               .orElseFail(UnknownNotificationHandle)
+                                                                   _      <- queue.offer(n)
+                                                                 } yield ())
+                                                                   .tapError(_ =>
+                                                                     UIO(
+                                                                       println(s"Unknown notification ${n.handle}")
+                                                                     )
+                                                                   )
+                                                                   .orElseSucceed(())
+                                                               }
+
+      _ <- (responseProcessLoop <&> notificationsToQueue).fork.toManaged_
+    } yield (
+      new ResponseListeners(responsePromises),
+      new NotificationListeners(notificationQueues)
+    )
+
   def getVariableHandleCommand(varName: String): Attempt[AdsWriteReadCommand] =
     for {
       encodedVarName <- AdsCodecs.string.encode(varName)
@@ -270,5 +309,11 @@ object AdsCommandClient extends AdsCommandCodecs {
       }
       ._2
 
-  def keepSecond[T, U](first: T, second: U): U = second
+  // Weird construct to prevent unused param warning for 'first'
+  def keepSecond[U](first: Any, second: U): U = first match { case _ => second }
+
+  private def decodeStream[R, S: Codec](stream: ZStream[R, Exception, Byte]): ZStream[R, AdsClientError, S] =
+    ZStreamScodecOps.decodeStream(stream.mapError[AdsClientError](AdsClientException(_)), DecodingError.apply)(
+      implicitly[Codec[S]]
+    )
 }

@@ -6,14 +6,15 @@ Beckhoff TwinCAT ADS client for the Scala language
 This is a Scala-idiomatic reactive client for [Beckhoff TwinCAT PLC](http://www.beckhoff.com/TwinCAT/). 
 
 ## Features
-* Get a continuous stream of notifications for PLC variables as Monix [Observable](https://monix.io/docs/3x/reactive/observable.html)s. 
-* Compose and transform Observables to achieve more complex behavior. 
-* Streaming of elements in an Observable to PLC variables
-* Easy reading and writing of custom data types (case classes) to PLC structs
+* Get a continuous stream of notifications for PLC variables as ZIO [Streams](https://zio.dev/docs/datatypes/datatypes_stream). 
+* Compose and transform Streams to achieve more complex behavior. 
+* Automatically closed variable & notification handles via `ZManaged`
+* Streaming writing of values to PLC variables
+* Easy reading and writing of custom data types (case classes) to PLC `STRUCT`s
 * Efficient and typesafe reading and writing of many variables at once using ADS SUM commands
 * Fully non-blocking async IO.
 
-Built on top of [monix](https://github.com/monix/monix) and [monix-nio](https://github.com/monix/monix-nio).
+Built on top of [zio](https://www.zio.dev) and [zio-nio](https://github.com/zio/zio-nio).
 
 # Documentation
 
@@ -23,27 +24,25 @@ The `AdsClient` object provides a `connect` method which will asynchronously con
 *Important* a route must be added to the ADS router to allow traffic from the source AMS ID.
 
 ```scala
-import com.vroste.adsclient._
-import com.vroste.adsclient.codec.AdsCodecs._
-
-import monix.eval.Task
-import monix.execution.Scheduler.Implicits.global
+import nl.vroste.adsclient._
 
 val settings = AdsConnectionSettings(AmsNetId.fromString("10.211.55.3.1.1"), 801, AmsNetId.fromString("10.211.55.3.10.10"), 123, "localhost")
-val clientT: Task[AdsClient] = AdsClient.connect(settings)
+val client = AdsClient.connect(settings)
 
-// Example, in a real application you should flatMap the task
-clientT.runOnComplete {
- case Success(adsClient) => // Do stuff with the client
- ...
+client.use { c =>
+  // Do stuff with client
 }
 ```
 
 ## Reading
 To read a PLC variable once:
 ```scala
-val client: AdsClient = AdsClient.connect(...)
-val result: Task[Int] = client.read("MAIN.myIntegerVar", int)
+import zio._
+import zio.clock._
+import nl.vroste.adsclient._
+
+val client: AdsClient
+val result: ZIO[Clock, AdsClientError, Int] = client.read("MAIN.myIntegerVar", AdsCodecs.int)
 ```
 
 This will create a variable handle, read using the handle and release the handle.
@@ -52,8 +51,13 @@ This will create a variable handle, read using the handle and release the handle
 To read many variables efficiently and atomically, first create a list of the variable names and their respective codecs and then call the `read()` method.
 
 ```scala
-val variables = VariableList("MAIN.var1", int) + ("MAIN.var2", bool)
-val result: Task[Int :: Bool :: HNil] = client.read(variables)
+import zio._
+import zio.clock._
+import nl.vroste.adsclient._
+
+val client: AdsClient
+val variables = VariableList("MAIN.var1", AdsCodecs.int) + ("MAIN.var2", AdsCodecs.bool)
+val result: ZIO[Clock, AdsClientError, Int :: Bool :: HNil] = client.read(variables)
 
 ```
 
@@ -87,10 +91,14 @@ Available codecs are named after the PLC datatype, in the `AdsCodecs` object:
 | `time` | TIME          | FiniteDuration       | |
 
 ## Notifications
-The `AdsClient` can provide notifications for changes to a PLC variable as an `Observable`. This is the recommended way to repeatedly check a variable for changes without polling.
+The `AdsClient` can provide notifications for changes to a PLC variable as a `ZStream`. This is the recommended way to repeatedly check a variable for changes without polling.
 
 ```scala
-val notifications: Observable[AdsNotification[String]] = client.notificationsFor("MAIN.myStringVar", string)
+import nl.vroste.adsclient._
+
+val client: AdsClient
+
+val notifications: ZStream[Any, Nothing, AdsNotification[String]] = client.notificationsFor("MAIN.myStringVar", AdsCodecs.string)
 
 // Perform further operations on this observable, such as filtering, mapping, joining with observables
 // for other PLC variables, etc. 

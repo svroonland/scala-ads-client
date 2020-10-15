@@ -10,12 +10,20 @@ sealed trait AdsCommand
 
 object AdsCommand {
 
-  case class AdsReadCommand(indexGroup: Long, indexOffset: Long, readLength: Long) extends AdsCommand
+  case class AdsReadCommand(indexGroup: Long, indexOffset: Long, readLength: Long) extends AdsCommand {
+    override def toString: String = s"Read {indexGroup=$indexGroup, indexOffset=$indexOffset, readLength=$readLength}"
+  }
 
-  case class AdsWriteCommand(indexGroup: Long, indexOffset: Long, values: BitVector) extends AdsCommand
+  case class AdsWriteCommand(indexGroup: Long, indexOffset: Long, values: BitVector) extends AdsCommand {
+    override def toString: String =
+      s"Write {indexGroup=$indexGroup, indexOffset=$indexOffset, values=${values.toHex}}"
+  }
 
   case class AdsWriteReadCommand(indexGroup: Long, indexOffset: Long, readLength: Long, values: BitVector)
-      extends AdsCommand
+      extends AdsCommand {
+    override def toString: String =
+      s"WriteRead {indexGroup=$indexGroup, indexOffset=$indexOffset, readLength=$readLength, values=${values.toHex}}"
+  }
 
   case class AdsAddDeviceNotificationCommand(
     indexGroup: Long,
@@ -24,11 +32,17 @@ object AdsCommand {
     transmissionMode: AdsTransmissionMode,
     maxDelay: Long,
     cycleTime: Long
-  ) extends AdsCommand
+  ) extends AdsCommand {
+    override def toString: String =
+      s"AddDeviceNotification {indexGroup=$indexGroup, indexOffset=$indexOffset, " +
+        s"readLength=$readLength, transmissionMode=$transmissionMode, maxDelay=$maxDelay, cycleTime=$cycleTime}"
+  }
 
-  case class AdsDeleteDeviceNotificationCommand(notificationHandle: Long) extends AdsCommand
+  case class AdsDeleteDeviceNotificationCommand(notificationHandle: Long) extends AdsCommand {
+    override def toString: String = s"DeleteDeviceNotification {notificationHandle=$notificationHandle}"
+  }
 
-  def commandId(c: AdsCommand): Short =
+  def commandId(c: AdsCommand): Int =
     c match {
       case AdsReadCommand(_, _, _)                           => 0x0002
       case AdsWriteCommand(_, _, _)                          => 0x0003

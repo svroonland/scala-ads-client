@@ -1,19 +1,13 @@
 package nl.vroste.adsclient.internal.util
 
-import nl.vroste.adsclient.AdsClientException
-import monix.eval.Task
-import monix.reactive.Observable
-import scodec.Attempt
+import scodec.{ Attempt, Err }
+import zio.{ IO, Task, ZIO }
 
 object AttemptUtil {
 
-  implicit class AttemptToTask[T](val attempt: Attempt[T]) extends AnyVal {
-    def toTask: Task[T] =
-      attempt.fold(cause => Task.raiseError(AdsClientException(cause.messageWithContext)), Task.pure)
-  }
-
-  implicit class AttemptToObservable[T](val attempt: Attempt[T]) extends AnyVal {
-    def toObservable: Observable[T] = Observable.fromTask(attempt.toTask)
+  implicit class AttemptToTask[+T](val attempt: Attempt[T]) extends AnyVal {
+    def toZio[R, E](e: Err => E): ZIO[R, E, T] =
+      attempt.fold(cause => IO.fail(e(cause)), Task.succeed(_))
   }
 
   implicit class AttemptSequence[T](val seq: Seq[Attempt[T]]) extends AnyVal {

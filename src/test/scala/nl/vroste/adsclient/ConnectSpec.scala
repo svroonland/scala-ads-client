@@ -1,11 +1,11 @@
-package nl.vroste.adsclient
-
-import monix.eval.Task
-
-class ConnectSpec extends BaseSpec {
-  "ADSClient" must "connect and close to a PLC" in {
-    withClient { _ =>
-      Task.pure(succeed)
-    }
-  }
-}
+//package nl.vroste.adsclient
+//
+//import zio.Task
+//
+//class ConnectSpec extends BaseSpec {
+//  "ADSClient" must "connect and close to a PLC" in {
+//    clientM.use { _ =>
+//      Task.succeed(succeed)
+//    }
+//  }
+//}

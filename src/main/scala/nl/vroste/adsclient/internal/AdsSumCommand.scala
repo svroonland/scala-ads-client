@@ -7,6 +7,10 @@ import scodec.codecs._
 import scodec.{ Attempt, Codec }
 import nl.vroste.adsclient.internal.util.CodecUtil.BitVectorExtensions
 
+trait AdsSumCommand {
+  def toAdsCommand: Attempt[AdsWriteReadCommand]
+}
+
 // SUM COMMANDS
 // Sum commands are basically a list of commands of a type (read, write or write+read).
 // They are encoded as write-read commands with a special encoding of the list of sub commands
@@ -14,7 +18,7 @@ import nl.vroste.adsclient.internal.util.CodecUtil.BitVectorExtensions
 // for better composability
 object AdsSumCommand extends AdsSumCommandCodecs {
 
-  case class AdsSumReadCommand(commands: Seq[AdsReadCommand]) {
+  case class AdsSumReadCommand(commands: Seq[AdsReadCommand]) extends AdsSumCommand {
     def toAdsCommand: Attempt[AdsWriteReadCommand] = {
       val requestParts = commands.map(c => SumReadRequestPart(c.indexGroup, c.indexOffset, c.readLength))
 
@@ -22,14 +26,14 @@ object AdsSumCommand extends AdsSumCommandCodecs {
         requestPartsBits <- list(Codec[SumReadRequestPart]).encode(requestParts.toList)
       } yield AdsWriteReadCommand(
         indexGroup = IndexGroups.SumRead,
-        indexOffset = commands.length,
+        indexOffset = commands.length.toLong,
         values = requestPartsBits,
         readLength = commands.map(_.readLength).sum + errorCodeSize * commands.length
       )
     }
   }
 
-  case class AdsSumWriteCommand(commands: Seq[AdsWriteCommand], values: BitVector) {
+  case class AdsSumWriteCommand(commands: Seq[AdsWriteCommand], values: BitVector) extends AdsSumCommand {
     def toAdsCommand: Attempt[AdsWriteReadCommand] = {
       val requestParts =
         commands.map(c => SumWriteRequestPart(c.indexGroup, c.indexOffset, length = c.values.lengthInBytes))
@@ -39,16 +43,16 @@ object AdsSumCommand extends AdsSumCommandCodecs {
         requestPartsBits <- list(Codec[SumWriteRequestPart]).encode(requestParts.toList)
       } yield AdsWriteReadCommand(
         indexGroup = IndexGroups.SumWrite,
-        indexOffset = commands.length,
+        indexOffset = commands.length.toLong,
         values = requestPartsBits ++ valueBits,
-        readLength = errorCodeSize * commands.length
+        readLength = errorCodeSize * commands.length.toLong
       )
     }
   }
 
   // A sum write read command is an ADS write/read command to a specific indexGroup with the sub write/read commands
   // encoded as the payload. The values to be written are encoded at the end
-  case class AdsSumWriteReadCommand(commands: Seq[AdsWriteReadCommand]) {
+  case class AdsSumWriteReadCommand(commands: Seq[AdsWriteReadCommand]) extends AdsSumCommand {
     def toAdsCommand: Attempt[AdsWriteReadCommand] = {
       val requestParts =
         commands.map(c => SumReadWriteRequestPart(c.indexGroup, c.indexOffset, c.readLength, c.values.lengthInBytes))
@@ -58,7 +62,7 @@ object AdsSumCommand extends AdsSumCommandCodecs {
         requestPartsBits <- list(Codec[SumReadWriteRequestPart]).encode(requestParts.toList)
       } yield AdsWriteReadCommand(
         indexGroup = IndexGroups.SumWriteRead,
-        indexOffset = commands.length,
+        indexOffset = commands.length.toLong,
         // Result + error code + data for each sub command
         readLength = commands.map(_.readLength + resultLengthSize + errorCodeSize).sum,
         values = requestPartsBits ++ valueBits
