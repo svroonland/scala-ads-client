@@ -27,9 +27,9 @@ object AdsClient {
     /**
      * Read a variable once
      *
-   * Creates a handle to the variable, reads using the handle and releases the handle
+     * Creates a handle to the variable, reads using the handle and releases the handle
      *
-   * @param varName PLC variable name
+     * @param varName PLC variable name
      * @param codec   Codec for the variable type
      * @tparam T Type of the value that will be decoded
      * @return
@@ -44,11 +44,11 @@ object AdsClient {
     /**
      * Read a list of variables once
      *
-   * Creates the variable handles, reads the variables and releases the handles
+     * Creates the variable handles, reads the variables and releases the handles
      *
-   * Uses ADS Sum commands to perform these as three operations efficiently
+     * Uses ADS Sum commands to perform these as three operations efficiently
      *
-   * @param variables [[VariableList]] describing the variable names and their codecs
+     * @param variables [[VariableList]] describing the variable names and their codecs
      * @tparam T Type of [[HList]] of the values
      * @return HList of the read values
      */
@@ -57,14 +57,14 @@ object AdsClient {
     /**
      * Read a list of variables given a list of existing variable handles
      *
-   * Uses ADS Sum commands to perform this operation efficiently
+     * Uses ADS Sum commands to perform this operation efficiently
      */
     def read[T <: HList](variables: VariableList[T], handles: Seq[VariableHandle]): AdsT[T]
 
     /**
      * Write to a variable once
      *
-   * @param varName PLC variable name
+     * @param varName PLC variable name
      * @param codec   Codec between scala value and PLC value
      * @tparam T Type of the value
      * @return
@@ -79,16 +79,16 @@ object AdsClient {
     /**
      * Write to a list of variables once
      *
-   * Creates handles for the variables, writes the values and releases the handles
+     * Creates handles for the variables, writes the values and releases the handles
      *
-   * Uses ADS Sum commands to perform these three operations efficiently
+     * Uses ADS Sum commands to perform these three operations efficiently
      */
     def write[T <: HList](variables: VariableList[T], value: T): AdsT[Unit]
 
     /**
      * Writes to a list of variables given existing handles
      *
-   * @param variables
+     * @param variables
      * @param handles
      * @param value
      * @tparam T
@@ -99,7 +99,7 @@ object AdsClient {
     /**
      * Creates an observable that emits an element whenever the underlying PLC variable's value changes
      *
-   * @param varName PLC variable name
+     * @param varName PLC variable name
      * @param codec   Codec between scala value and PLC value
      * @tparam T Type of the value
      * @return
@@ -109,7 +109,7 @@ object AdsClient {
     /**
      * Creates a consumer that writes elements to a PLC variable
      *
-   * @param varName PLC variable name
+     * @param varName PLC variable name
      * @param codec   Codec between scala value and PLC value
      * @tparam T Type of the value
      * @return
@@ -122,9 +122,9 @@ object AdsClient {
     /**
      * Creates a consumer that writes to many PLC variables at once
      *
-   * Uses ADS sum commands
+     * Uses ADS sum commands
      *
-   * @param variables
+     * @param variables
      * @param codec
      * @tparam T
      */
@@ -216,9 +216,9 @@ object AdsClient {
       channel                                   <- AsynchronousSocketChannel()
       inetAddress                               <- SocketAddress.inetSocketAddress(settings.hostname, settings.port).toManaged_
       _                                         <- channel
-             .connect(inetAddress)
-             .timeoutFail(new TimeoutException("Timeout connecting to ADS server"))(settings.timeout)
-             .toManaged_
+                                                     .connect(inetAddress)
+                                                     .timeoutFail(new TimeoutException("Timeout connecting to ADS server"))(settings.timeout)
+                                                     .toManaged_
       writeQueue                                <- Queue.bounded[Chunk[Byte]](writeQueueSize).toManaged(_.shutdown)
       inputStream                                = createInputStream(channel)
       runLoopThings                             <- AdsCommandClient.runLoop(inputStream)

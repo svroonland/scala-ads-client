@@ -134,11 +134,11 @@ class AdsCommandClient(
     for {
       response <- p.await.timeoutFail(ResponseTimeout)(settings.timeout)
       result   <- response.header.data match {
-                  case Right(r) if r.getClass == classTag.runtimeClass =>
-                    ZIO.succeed(r.asInstanceOf[R])
-                  case r @ _                                           =>
-                    ZIO.fail[AdsClientError](UnexpectedResponse)
-                }
+                    case Right(r) if r.getClass == classTag.runtimeClass =>
+                      ZIO.succeed(r.asInstanceOf[R])
+                    case r @ _                                           =>
+                      ZIO.fail[AdsClientError](UnexpectedResponse)
+                  }
     } yield result
 
   def checkErrorCode(errorCode: Long): AdsT[Unit] =
@@ -159,8 +159,8 @@ object AdsCommandClient extends AdsCommandCodecs with AmsCodecs {
       for {
         queue <- Queue.unbounded[AdsNotificationSampleWithTimestamp].toManaged(_.shutdown)
         _     <- queues
-               .update(_ + (handle -> queue))
-               .toManaged(_ => queues.update(_ - handle))
+                   .update(_ + (handle -> queue))
+                   .toManaged(_ => queues.update(_ - handle))
       } yield queue
   }
 
@@ -169,8 +169,8 @@ object AdsCommandClient extends AdsCommandCodecs with AmsCodecs {
       for {
         promise <- Promise.make[AdsClientError, AmsPacket].toManaged_
         _       <- listeners
-               .update(_ + (invokeId -> promise))
-               .toManaged(_ => listeners.update(_ - invokeId))
+                     .update(_ + (invokeId -> promise))
+                     .toManaged(_ => listeners.update(_ - invokeId))
       } yield promise
   }
 
@@ -192,7 +192,7 @@ object AdsCommandClient extends AdsCommandCodecs with AmsCodecs {
       notificationQueues <- Ref.make[Map[Long, Queue[AdsNotificationSampleWithTimestamp]]](Map.empty).toManaged_
 
       // Completes a promise for each received packet depending on its invokeId
-      responseProcessLoop                                    = substreams(0).foreach { packet =>
+      responseProcessLoop = substreams(0).foreach { packet =>
                               for {
                                 promises  <- responsePromises.get
                                 promiseOpt = promises.get(packet.header.invokeId)
@@ -220,8 +220,8 @@ object AdsCommandClient extends AdsCommandCodecs with AmsCodecs {
                                                                  (for {
                                                                    queues <- notificationQueues.get
                                                                    queue  <- ZIO
-                                                                              .fromOption(queues.get(n.handle))
-                                                                              .orElseFail(UnknownNotificationHandle)
+                                                                               .fromOption(queues.get(n.handle))
+                                                                               .orElseFail(UnknownNotificationHandle)
                                                                    _      <- queue.offer(n)
                                                                  } yield ())
                                                                    .tapError(_ =>
@@ -232,7 +232,7 @@ object AdsCommandClient extends AdsCommandCodecs with AmsCodecs {
                                                                    .orElseSucceed(())
                                                                }
 
-      _                                                     <- (responseProcessLoop <&> notificationsToQueue).fork.toManaged_
+      _ <- (responseProcessLoop <&> notificationsToQueue).fork.toManaged_
     } yield (
       new ResponseListeners(responsePromises),
       new NotificationListeners(notificationQueues)
@@ -270,8 +270,8 @@ object AdsCommandClient extends AdsCommandCodecs with AmsCodecs {
     for {
       encodedVarNames <- variables.map(AdsCodecs.string.encode).sequence
       commands         = encodedVarNames.map(
-                   AdsWriteReadCommand(IndexGroups.GetSymHandleByName, indexOffset = 0x00000000, readLength = 4, _)
-                 )
+                           AdsWriteReadCommand(IndexGroups.GetSymHandleByName, indexOffset = 0x00000000, readLength = 4, _)
+                         )
     } yield AdsSumWriteReadCommand(commands)
 
   def readVariablesCommand(handlesAndLengths: Seq[(VariableHandle, Long)]): Attempt[AdsSumReadCommand] =
@@ -303,10 +303,9 @@ object AdsCommandClient extends AdsCommandCodecs with AmsCodecs {
 
   def splitBitVectorAtPositions(bitVector: BitVector, lengthsInBits: List[Long]): List[BitVector] =
     lengthsInBits
-      .foldLeft((bitVector, List.empty[BitVector])) {
-        case ((remaining, acc), length) =>
-          val (value, newRemaining) = remaining.splitAt(length)
-          (newRemaining, acc :+ value)
+      .foldLeft((bitVector, List.empty[BitVector])) { case ((remaining, acc), length) =>
+        val (value, newRemaining) = remaining.splitAt(length)
+        (newRemaining, acc :+ value)
       }
       ._2
 
