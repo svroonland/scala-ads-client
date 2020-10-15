@@ -18,7 +18,9 @@ import zio.stream.ZStream
 
 import scala.reflect.ClassTag
 
-case class AdsNotificationSampleWithTimestamp(handle: Long, timestamp: Instant, data: BitVector)
+private[adsclient] case class AdsNotificationSampleWithTimestamp(handle: Long, timestamp: Instant, data: BitVector)
+
+private[adsclient] case class VariableHandle(value: Long) extends AnyVal
 
 /**
  * Responsible for encoding and executing single ADS commands and decoding their response
@@ -33,7 +35,7 @@ case class AdsNotificationSampleWithTimestamp(handle: Long, timestamp: Instant, 
  * @param notifications Per-handle queue for notification messages
  * @param responsePromises Per-invokeId promise for a response
  */
-class AdsCommandClient(
+final class AdsCommandClient(
   settings: AdsConnectionSettings,
   writeQueue: Queue[Chunk[Byte]],
   invokeId: Ref[Int],

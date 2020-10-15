@@ -1,8 +1,7 @@
 package nl.vroste.adsclient.internal.codecs
 
-import nl.vroste.adsclient.{ AdsCodecs, AdsState, AdsTransmissionMode, VariableHandle }
-import nl.vroste.adsclient.internal.AdsResponse
-import nl.vroste.adsclient.internal.AdsCommand
+import nl.vroste.adsclient.{ AdsCodecs, AdsState, AdsTransmissionMode }
+import nl.vroste.adsclient.internal.{ AdsCommand, AdsResponse, VariableHandle }
 import scodec.{ Attempt, Codec, Err }
 
 trait AdsCommandCodecs {

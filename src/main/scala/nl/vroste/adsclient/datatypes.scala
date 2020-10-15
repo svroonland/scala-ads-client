@@ -80,6 +80,4 @@ object AdsTransmissionMode extends Enum[AdsTransmissionMode] {
   case object Cyclic   extends AdsTransmissionMode
 }
 
-case class VariableHandle(value: Long) extends AnyVal
-
 case class NotificationHandle(value: Long) extends AnyVal
