@@ -9,16 +9,51 @@ import zio.ZManaged
 import zio.clock.Clock
 import zio.stream.{ ZSink, ZStream }
 
-class AdsClientImpl(client: AdsCommandClient) extends AdsClient.Service {
-
+private[adsclient] class AdsClientImpl(client: AdsCommandClient) extends AdsClient.Service { self =>
   import AdsClientImpl._
   import AdsCommandClient._
   import AdsResponse._
 
-  override def read[T](varName: String, codec: Codec[T]): AdsT[T] =
-    variableHandle(varName).use(read(_, codec))
+  // TODO we can probably reuse IndexGroup and IndexOffset variants a bit here
+  override def varHandle[T](varName: String, codec: Codec[T]): ZManaged[Clock, AdsClientError, VarHandle[T]] =
+    variableHandle(varName).map { handle =>
+      new VarHandle[T] {
+        override def read: AdsT[T]                                                     = self.read(handle, codec)
+        override def write(value: T): AdsT[Unit]                                       = self.write(handle, value, codec)
+        override def notifications: ZStream[Clock, AdsClientError, AdsNotification[T]] =
+          self.notificationsFor(handle, codec)
+        override def sink: ZSink[Clock, AdsClientError, T, T, Unit]                    = consumerFor(handle, codec)
+      }
+    }
 
-  override def read[T](handle: VariableHandle, codec: Codec[T]): AdsT[T] =
+  override def varHandle[T <: HList](
+    variables: VariableList[T]
+  ): ZManaged[Clock, AdsClientError, VarHandle[T]] = createHandles(variables).map { handles =>
+    new VarHandle[T] {
+      override def read: AdsT[T]                                                     = self.read(variables, handles)
+      override def write(value: T): AdsT[Unit]                                       = self.write(variables, handles, value)
+      override def notifications: ZStream[Clock, AdsClientError, AdsNotification[T]] =
+        ZStream.die(new NotImplementedError("Not supported "))
+      override def sink: ZSink[Clock, AdsClientError, T, T, Unit]                    = self.consumerFor(variables, handles)
+    }
+  }
+
+  override def varHandle[T](
+    indexGroup: Long,
+    indexOffset: Long,
+    codec: Codec[T]
+  ): ZManaged[Clock, AdsClientError, VarHandle[T]] =
+    ZManaged.succeed {
+      new VarHandle[T] {
+        override def read: AdsT[T]                                                     = self.read(indexGroup, indexOffset, codec)
+        override def write(value: T): AdsT[Unit]                                       = self.write(indexGroup, indexOffset, value, codec)
+        override def notifications: ZStream[Clock, AdsClientError, AdsNotification[T]] =
+          notificationsFor(indexGroup, indexOffset, codec)
+        override def sink: ZSink[Clock, AdsClientError, T, T, Unit]                    = ??? // TODO
+      }
+    }
+
+  def read[T](handle: VariableHandle, codec: Codec[T]): AdsT[T] =
     read(IndexGroups.ReadWriteSymValByHandle, indexOffset = handle.value, codec)
 
   def read[T](indexGroup: Long, indexOffset: Long, codec: Codec[T]): AdsT[T] =
@@ -27,10 +62,7 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient.Service {
       decoded <- codec.decodeValue(data).toZio(DecodingError)
     } yield decoded
 
-  override def read[T <: HList](command: VariableList[T]): AdsT[T] =
-    createHandles(command).use(read(command, _))
-
-  override def read[T <: HList](command: VariableList[T], handles: Seq[VariableHandle]): AdsT[T] =
+  def read[T <: HList](command: VariableList[T], handles: Seq[VariableHandle]): AdsT[T] =
     for {
       sumCommand         <- readVariablesCommand(handles.zip(command.sizes)).toZio(EncodingError)
       response           <- runSumCommand(sumCommand)
@@ -40,19 +72,19 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient.Service {
       _                  <- client.checkErrorCodes(errorCodesAndValue._1)
     } yield errorCodesAndValue._2
 
-  override def write[T](varName: String, value: T, codec: Codec[T]): AdsT[Unit] =
-    variableHandle(varName).use(write(_, value, codec))
-
-  override def write[T](handle: VariableHandle, value: T, codec: Codec[T]): AdsT[Unit] =
+  def write[T](handle: VariableHandle, value: T, codec: Codec[T]): AdsT[Unit] =
     codec
       .encode(value)
       .toZio(DecodingError)
       .flatMap(client.writeToVariable(handle, _))
 
-  override def write[T <: HList](command: VariableList[T], values: T): AdsT[Unit] =
-    createHandles(command).use(write(command, _, values))
+  def write[T](indexGroup: Long, indexOffset: Long, value: T, codec: Codec[T]): AdsT[Unit] =
+    codec
+      .encode(value)
+      .toZio(DecodingError)
+      .flatMap(client.write(indexGroup, indexOffset, _))
 
-  override def write[T <: HList](command: VariableList[T], handles: Seq[VariableHandle], values: T): AdsT[Unit] =
+  def write[T <: HList](command: VariableList[T], handles: Seq[VariableHandle], values: T): AdsT[Unit] =
     for {
       sumCommand <- writeVariablesCommand(handles.zip(command.sizes), command.codec, values).toZio(EncodingError)
       response   <- runSumCommand(sumCommand)
@@ -60,23 +92,13 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient.Service {
       _          <- client.checkErrorCodes(errorCodes)
     } yield ()
 
-  /**
-   * Creates an observable that emits whenever an ADS notification is received
-   *
-   * A symbol handle and device notification are created and cleaned up when the observable terminates.
-   *
-   * @param varName PLC variable name
-   * @param codec   Codec between scala value and PLC value
-   * @tparam T Type of the value
-   * @return
-   */
-  override def notificationsFor[T](
-    varName: String,
+  def notificationsFor[T](
+    handle: VariableHandle,
     codec: Codec[T]
   ): ZStream[Clock, AdsClientError, AdsNotification[T]] =
-    withNotificationHandle(varName, codec)(notificationsForHandle(_, codec))
+    withNotificationHandle(handle, codec)(notificationsForHandle(_, codec))
 
-  private def notificationsForHandle[T](
+  def notificationsForHandle[T](
     handle: NotificationHandle,
     codec: Codec[T]
   ): ZStream[Clock, AdsClientError, AdsNotification[T]] =
@@ -107,56 +129,41 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient.Service {
    * Takes a function producing an observable for some notification handle and produces an observable that
    * when subscribed creates a notification handle and when unsubscribed or completed deletes the notification handle
    */
-  def withNotificationHandle[U](varName: String, codec: Codec[_])(
+  def withNotificationHandle[U](varHandle: VariableHandle, codec: Codec[_])(
     f: NotificationHandle => ZStream[Clock, AdsClientError, U]
   ): ZStream[Clock, AdsClientError, U] =
-    ZStream.managed(variableHandle(varName)).flatMap { varHandle =>
-      withNotificationHandle(IndexGroups.ReadWriteSymValByHandle, varHandle.value, codec)(f)
-    }
+    withNotificationHandle(IndexGroups.ReadWriteSymValByHandle, varHandle.value, codec)(f)
 
   def withNotificationHandle[R, U](indexGroup: Long, indexOffset: Long, codec: Codec[_])(
     f: NotificationHandle => ZStream[R, AdsClientError, U]
-  ): ZStream[R with Clock, AdsClientError, U] = {
-    val acquire = client.getNotificationHandle(indexGroup, indexOffset, sizeInBytes(codec), 0, 100)
-    val release = client.deleteNotificationHandle _
+  ): ZStream[R with Clock, AdsClientError, U] =
+    ZStream.unwrapManaged(notificationHandle(indexGroup, indexOffset, codec).map(f))
 
-    ZStream.bracket(acquire)(release(_).ignore).flatMap(f)
-  }
+  private def notificationHandle(
+    indexGroup: Long,
+    indexOffset: Long,
+    codec: Codec[_]
+  ): ZManaged[Clock, AdsClientError, NotificationHandle] =
+    ZManaged.make(client.getNotificationHandle(indexGroup, indexOffset, sizeInBytes(codec), 0, 100))(
+      client.deleteNotificationHandle(_).ignore
+    )
 
-  /**
-   * Creates a consumer that writes elements to a PLC variable
-   *
-   * A symbol handle is created when the first value is consumed and cleaned up when
-   * there are no more values to consume.
-   *
-   * @param varName PLC variable name
-   * @param codec   Codec between scala value and PLC value
-   * @tparam T Type of the value
-   * @return
-   */
-  override def consumerFor[T](
-    varName: String,
+  def consumerFor[T](
+    handle: VariableHandle,
     codec: Codec[T]
   ): ZSink[Clock, AdsClientError, T, T, Unit] =
-    ZSink.managed(variableHandle(varName)) { handle =>
-      ZSink.drain.contramapM(write(handle, _, codec))
-    }
+    ZSink.foreach(write(handle, _, codec))
 
-  override def consumerFor[T <: HList](
+  def consumerFor[T <: HList](
+    variables: VariableList[T]
+  ): ZSink[Clock, AdsClientError, T, T, Unit] =
+    ZSink.managed(createHandles(variables))(consumerFor(variables, _))
+
+  def consumerFor[T <: HList](
     variables: VariableList[T],
-    codec: Codec[T]
+    handles: Seq[VariableHandle]
   ): ZSink[Clock, AdsClientError, T, T, Unit] =
-    ZSink.managed(createHandles(variables)) { handles =>
-      ZSink.drain.contramapM(write(variables, handles, _))
-    }
-
-  override def stateChanges: ZStream[Clock, AdsClientError, AdsNotification[AdsState]] =
-    notificationsFor(IndexGroups.AdsState, indexOffset = 0, codec = adsStateCodec)
-
-  override def readState: AdsT[AdsState] =
-    read(IndexGroups.AdsState, indexOffset = 0, codec = adsStateCodec)
-
-  // TODO should  these be moved to the client?
+    ZSink.foreach(write(variables, handles, _))
 
   private def variableHandle(varName: String) =
     ZManaged.make(client.getVariableHandle(varName))(client.releaseVariableHandle(_).ignore)

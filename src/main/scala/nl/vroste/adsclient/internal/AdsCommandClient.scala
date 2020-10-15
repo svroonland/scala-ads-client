@@ -86,12 +86,15 @@ class AdsCommandClient(
     }.unit
 
   def writeToVariable(variableHandle: VariableHandle, value: BitVector): AdsT[Unit] =
+    write(
+      indexGroup = IndexGroups.ReadWriteSymValByHandle,
+      indexOffset = variableHandle.value,
+      value
+    )
+
+  def write(indexGroup: Long, indexOffset: Long, value: BitVector): AdsT[Unit] =
     runCommand[AdsWriteCommandResponse] {
-      AdsWriteCommand(
-        indexGroup = IndexGroups.ReadWriteSymValByHandle,
-        indexOffset = variableHandle.value,
-        values = value
-      )
+      AdsWriteCommand(indexGroup, indexOffset, value)
     }.unit
 
   def read(indexGroup: Long, indexOffset: Long, size: Long): AdsT[BitVector] =
