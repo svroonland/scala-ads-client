@@ -14,17 +14,8 @@ private[adsclient] class AdsClientImpl(client: AdsCommandClient) extends AdsClie
   import AdsCommandClient._
   import AdsResponse._
 
-  // TODO we can probably reuse IndexGroup and IndexOffset variants a bit here
   override def varHandle[T](varName: String, codec: Codec[T]): ZManaged[Clock, AdsClientError, VarHandle[T]] =
-    variableHandle(varName).map { handle =>
-      new VarHandle[T] {
-        override def read: AdsT[T]                                                     = self.read(handle, codec)
-        override def write(value: T): AdsT[Unit]                                       = self.write(handle, value, codec)
-        override def notifications: ZStream[Clock, AdsClientError, AdsNotification[T]] =
-          self.notificationsFor(handle, codec)
-        override def sink: ZSink[Clock, AdsClientError, T, T, Unit]                    = consumerFor(handle, codec)
-      }
-    }
+    variableHandle(varName).flatMap(handle => varHandle(IndexGroups.ReadWriteSymValByHandle, handle.value, codec))
 
   override def varHandle[T <: HList](
     variables: VariableList[T]
@@ -33,8 +24,8 @@ private[adsclient] class AdsClientImpl(client: AdsCommandClient) extends AdsClie
       override def read: AdsT[T]                                                     = self.read(variables, handles)
       override def write(value: T): AdsT[Unit]                                       = self.write(variables, handles, value)
       override def notifications: ZStream[Clock, AdsClientError, AdsNotification[T]] =
-        ZStream.die(new NotImplementedError("Not supported "))
-      override def sink: ZSink[Clock, AdsClientError, T, T, Unit]                    = self.consumerFor(variables, handles)
+        ZStream.die(new NotImplementedError("Not supported ")) // TODO we could probably whip up some joined stream here
+      override def sink: ZSink[Clock, AdsClientError, T, T, Unit] = self.consumerFor(variables, handles)
     }
   }
 
@@ -49,7 +40,7 @@ private[adsclient] class AdsClientImpl(client: AdsCommandClient) extends AdsClie
         override def write(value: T): AdsT[Unit]                                       = self.write(indexGroup, indexOffset, value, codec)
         override def notifications: ZStream[Clock, AdsClientError, AdsNotification[T]] =
           notificationsFor(indexGroup, indexOffset, codec)
-        override def sink: ZSink[Clock, AdsClientError, T, T, Unit]                    = ??? // TODO
+        override def sink: ZSink[Clock, AdsClientError, T, T, Unit]                    = self.consumerFor(indexGroup, indexOffset, codec)
       }
     }
 
@@ -149,10 +140,11 @@ private[adsclient] class AdsClientImpl(client: AdsCommandClient) extends AdsClie
     )
 
   def consumerFor[T](
-    handle: VariableHandle,
+    indexGroup: Long,
+    indexOffset: Long,
     codec: Codec[T]
   ): ZSink[Clock, AdsClientError, T, T, Unit] =
-    ZSink.foreach(write(handle, _, codec))
+    ZSink.foreach(write(indexGroup, indexOffset, _, codec))
 
   def consumerFor[T <: HList](
     variables: VariableList[T]
