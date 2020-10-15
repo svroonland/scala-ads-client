@@ -8,9 +8,9 @@ object ObservableUtil {
   /**
    * Creates an observable that depends on an asynchronously generated resource
    *
-    * Analog of [[monix.eval.Task.bracket]] for observables
+   * Analog of [[monix.eval.Task.bracket]] for observables
    *
-    * Executes `acquire` upon subscription and feeds its result to `use`. Emits the elements emitted by the observable
+   * Executes `acquire` upon subscription and feeds its result to `use`. Emits the elements emitted by the observable
    * returned by `use`. When the observable is completed, `release` is executed
    * (which takes the result of acquire as parameter)
    */

@@ -11,9 +11,9 @@ import shapeless.HList
 /**
  * A reactive (non-blocking) client for ADS servers
  *
-  * Variables can be read continuously via Observables and written continuously via Observables
+ * Variables can be read continuously via Observables and written continuously via Observables
  *
-  * Supports reading/writing all primitive types as well as creating codecs for custom data types (case classes)
+ * Supports reading/writing all primitive types as well as creating codecs for custom data types (case classes)
  */
 trait AdsClient {
   // TODO write control
@@ -23,9 +23,9 @@ trait AdsClient {
   /**
    * Read a variable once
    *
-    * Creates a handle to the variable, reads using the handle and releases the handle
+   * Creates a handle to the variable, reads using the handle and releases the handle
    *
-    * @param varName PLC variable name
+   * @param varName PLC variable name
    * @param codec   Codec for the variable type
    * @tparam T Type of the value that will be decoded
    * @return
@@ -40,11 +40,11 @@ trait AdsClient {
   /**
    * Read a list of variables once
    *
-    * Creates the variable handles, reads the variables and releases the handles
+   * Creates the variable handles, reads the variables and releases the handles
    *
-    * Uses ADS Sum commands to perform these as three operations efficiently
+   * Uses ADS Sum commands to perform these as three operations efficiently
    *
-    * @param variables [[VariableList]] describing the variable names and their codecs
+   * @param variables [[VariableList]] describing the variable names and their codecs
    * @tparam T Type of [[HList]] of the values
    * @return HList of the read values
    */
@@ -53,14 +53,14 @@ trait AdsClient {
   /**
    * Read a list of variables given a list of existing variable handles
    *
-    * Uses ADS Sum commands to perform this operation efficiently
+   * Uses ADS Sum commands to perform this operation efficiently
    */
   def read[T <: HList](variables: VariableList[T], handles: Seq[VariableHandle]): Task[T]
 
   /**
    * Write to a variable once
    *
-    * @param varName PLC variable name
+   * @param varName PLC variable name
    * @param codec Codec between scala value and PLC value
    * @tparam T Type of the value
    * @return
@@ -75,16 +75,16 @@ trait AdsClient {
   /**
    * Write to a list of variables once
    *
-    * Creates handles for the variables, writes the values and releases the handles
+   * Creates handles for the variables, writes the values and releases the handles
    *
-    * Uses ADS Sum commands to perform these three operations efficiently
+   * Uses ADS Sum commands to perform these three operations efficiently
    */
   def write[T <: HList](variables: VariableList[T], value: T): Task[Unit]
 
   /**
    * Writes to a list of variables given existing handles
    *
-    * @param variables
+   * @param variables
    * @param handles
    * @param value
    * @tparam T
@@ -95,7 +95,7 @@ trait AdsClient {
   /**
    * Creates an observable that emits an element whenever the underlying PLC variable's value changes
    *
-    * @param varName PLC variable name
+   * @param varName PLC variable name
    * @param codec Codec between scala value and PLC value
    * @tparam T Type of the value
    * @return
@@ -105,7 +105,7 @@ trait AdsClient {
   /**
    * Creates a consumer that writes elements to a PLC variable
    *
-    * @param varName PLC variable name
+   * @param varName PLC variable name
    * @param codec Codec between scala value and PLC value
    * @tparam T Type of the value
    * @return
@@ -115,9 +115,9 @@ trait AdsClient {
   /**
    * Creates a consumer that writes to many PLC variables at once
    *
-    * Uses ADS sum commands
+   * Uses ADS sum commands
    *
-    * @param variables
+   * @param variables
    * @param codec
    * @tparam T
    */
@@ -136,7 +136,7 @@ trait AdsClient {
   /**
    * Closes the underlying connection to the ADS server
    *
-    * This will also complete any live observables and consumer tasks with an error. It is recommended
+   * This will also complete any live observables and consumer tasks with an error. It is recommended
    * to close those in the proper order to avoid such errors.
    */
   def close(): Task[Unit]
@@ -147,7 +147,7 @@ object AdsClient {
   /**
    * Creates a new AdsClient that is connected to a remote ADS server
    *
-    * @param settings ADS connection settings
+   * @param settings ADS connection settings
    */
   def connect(settings: AdsConnectionSettings)(implicit scheduler: Scheduler): Task[AdsClient] = {
     val socketClient = monix.nio.tcp.readWriteAsync(settings.hostname, settings.port, 1024)

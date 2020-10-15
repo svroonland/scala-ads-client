@@ -19,7 +19,7 @@ trait AdsSumCommandResponseCodecs extends AdsResponseCodecs {
    * The payload of the response of an ADS Sum WriteRead command is encoded as a list of (errorCode, readLength)
    * followed by the data of the individual write read commands
    *
-    * We map it to a list of regular write read command responses, but that takes some trickery to get right
+   * We map it to a list of regular write read command responses, but that takes some trickery to get right
    */
   def adsSumWriteReadCommandResponseDecoder(nrValues: Int): Decoder[AdsSumWriteReadCommandResponse] = {
     val errorsAndValuesCodec: Decoder[Seq[(Long, BitVector)]] =
@@ -28,9 +28,8 @@ trait AdsSumCommandResponseCodecs extends AdsResponseCodecs {
         .flatMap[Seq[(ErrorCode, BitVector)]] { errorCodesAndLengths =>
           val (errorCodes, lengths) = errorCodesAndLengths.unzip
 
-          val valueCodecs = lengths.zipWithIndex.map {
-            case (length, index) =>
-              bits(length.toInt * 8).withContext(s"WriteRead sub response value ${index + 1}")
+          val valueCodecs = lengths.zipWithIndex.map { case (length, index) =>
+            bits(length.toInt * 8).withContext(s"WriteRead sub response value ${index + 1}")
           }
 
           valueCodecs.sequence.map(errorCodes zip _)
@@ -44,7 +43,7 @@ trait AdsSumCommandResponseCodecs extends AdsResponseCodecs {
   /**
    * Decodes the payload of a SUM write read response as a sequence of T's along with their error code
    *
-    * @param nrValues Expected number of values
+   * @param nrValues Expected number of values
    * @param decoderT Decoder for a single value
    */
   def sumWriteReadResponsePayloadDecoder[T](
@@ -68,7 +67,7 @@ trait AdsSumCommandResponseCodecs extends AdsResponseCodecs {
   /**
    * The payload of the response of an ADS Sum Write command is a list of error codes
    *
-    * We can easily compose it from the single ADS write command response codec
+   * We can easily compose it from the single ADS write command response codec
    */
   implicit val adsSumWriteCommandResponseCodec: Codec[AdsSumWriteCommandResponse] =
     list(adsWriteCommandResponseCodec).xmap(AdsSumWriteCommandResponse, _.responses)

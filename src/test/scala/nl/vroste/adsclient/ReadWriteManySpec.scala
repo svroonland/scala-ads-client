@@ -40,10 +40,9 @@ class ReadWriteManySpec extends BaseSpec {
       _            = println(s"Var1: ${var1}, Var2: ${var2}")
     } yield fail
 
-    result.onErrorRecover {
-      case AdsClientException(e) =>
-        println(s"Got ADS exception: ${e}")
-        succeed
+    result.onErrorRecover { case AdsClientException(e) =>
+      println(s"Got ADS exception: ${e}")
+      succeed
     }
   }
 }
