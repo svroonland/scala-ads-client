@@ -1,14 +1,10 @@
 package nl.vroste.adsclient
 
-import java.util.concurrent.TimeoutException
-
-import nl.vroste.adsclient.internal.{ AdsClientImpl, AdsCommandClient }
+import nl.vroste.adsclient.internal.{ AdsClientImpl, AdsCommandClient, SocketClient }
 import scodec.Codec
 import shapeless.HList
 import zio._
 import zio.clock.Clock
-import zio.nio.channels.AsynchronousSocketChannel
-import zio.nio.core.SocketAddress
 import zio.stream.{ ZSink, ZStream }
 
 /**
@@ -213,17 +209,10 @@ object AdsClient {
    */
   def connect(settings: AdsConnectionSettings): ZManaged[Clock, Exception, AdsClient.Service] =
     for {
-      channel                                   <- AsynchronousSocketChannel()
-      inetAddress                               <- SocketAddress.inetSocketAddress(settings.hostname, settings.port).toManaged_
-      _                                         <- channel
-                                                     .connect(inetAddress)
-                                                     .timeoutFail(new TimeoutException("Timeout connecting to ADS server"))(settings.timeout)
-                                                     .toManaged_
-      writeQueue                                <- Queue.bounded[Chunk[Byte]](writeQueueSize).toManaged(_.shutdown)
-      inputStream                                = createInputStream(channel)
+      things                                    <- SocketClient.make(settings.hostname, settings.port, settings.timeout)
+      (inputStream, writeQueue)                  = things
       runLoopThings                             <- AdsCommandClient.runLoop(inputStream)
       (responseListeners, notificationListeners) = runLoopThings
-      _                                         <- writeLoop(channel, writeQueue)
       invokeIdRef                               <- Ref.make(0).toManaged_
     } yield new AdsClientImpl(
       new AdsCommandClient(settings, writeQueue, invokeIdRef, notificationListeners, responseListeners)
@@ -231,16 +220,4 @@ object AdsClient {
 
   val live: ZLayer[Clock with Has[AdsConnectionSettings], Exception, Has[Service]] =
     ZLayer.fromServiceManaged[AdsConnectionSettings, Clock, Exception, Service](connect)
-
-  private def writeLoop(
-    channel: AsynchronousSocketChannel,
-    queue: Queue[Chunk[Byte]]
-  ): ZManaged[Any, Nothing, Fiber.Runtime[Exception, Unit]] =
-    ZStream.fromQueue(queue).mapM(channel.writeChunk).runDrain.forkManaged
-
-  val maxFrameSize   = 1024
-  val writeQueueSize = 10
-
-  private def createInputStream(channel: AsynchronousSocketChannel): ZStream[Clock, Exception, Byte] =
-    ZStream.repeatEffectChunk(channel.readChunk(maxFrameSize).retry(Schedule.forever))
 }
