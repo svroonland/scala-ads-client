@@ -19,8 +19,8 @@ object AttemptUtil {
      * @return
      */
     def sequence: Attempt[Seq[T]] =
-      seq.foldLeft(Attempt.successful(Seq.empty[T])) {
-        case (as, a) => as.flatMap(s => a.map(s :+ _))
+      seq.foldLeft(Attempt.successful(Seq.empty[T])) { case (as, a) =>
+        as.flatMap(s => a.map(s :+ _))
       }
   }
 }

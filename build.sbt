@@ -14,9 +14,9 @@ lazy val root = (project in file(".")).settings(
     "dev.zio"      %% "zio-test"     % "1.0.3" % "test",
     "dev.zio"      %% "zio-test-sbt" % "1.0.3" % "test",
     "dev.zio"      %% "zio-nio"      % "1.0.0-RC10",
-    "com.beachape" %% "enumeratum"   % "1.5.13",
-    "org.scodec"   %% "scodec-bits"  % "1.1.12",
-    "org.scodec"   %% "scodec-core"  % "1.11.4"
+    "com.beachape" %% "enumeratum"   % "1.5.15",
+    "org.scodec"   %% "scodec-bits"  % "1.1.20",
+    "org.scodec"   %% "scodec-core"  % "1.11.7"
   ),
   parallelExecution in Test := false
 )

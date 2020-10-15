@@ -7,7 +7,7 @@ import shapeless.{ ::, HList, HNil, Nat }
 /**
  * List of PLC variables along with their codecs for use in ADS SUM commands
  *
-  * Can be used for:
+ * Can be used for:
  * - reading many variables at once
  * - reading many variables at once using a list of handles
  * - writing to many variables at once
@@ -15,7 +15,7 @@ import shapeless.{ ::, HList, HNil, Nat }
  * - creating handles for many variables at once
  * - releasing handles for many variables
  *
-  * Uses shapeless HList
+ * Uses shapeless HList
  */
 class VariableList[T <: HList] private (
   private[adsclient] val variables: Seq[String],
@@ -26,9 +26,9 @@ class VariableList[T <: HList] private (
   /**
    * Adds a variable of type [[U]] to the list
    *
-    * The implicits and other type parameters are needed to satisfy shapeless
+   * The implicits and other type parameters are needed to satisfy shapeless
    *
-    * @param varName Name of the variable
+   * @param varName Name of the variable
    * @param codecU  Codec for a value of type [[U]]
    */
   def +[U, TU <: HList, KLen <: Nat](varName: String, codecU: Codec[U])(implicit

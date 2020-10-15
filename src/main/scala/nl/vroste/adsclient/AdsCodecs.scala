@@ -10,7 +10,7 @@ import scala.concurrent.duration.{ FiniteDuration, _ }
 /**
  * Codecs for PLC variable types
  *
-  * Note that the ADS protocol is little-endian, while that of the JVM is not necessarily
+ * Note that the ADS protocol is little-endian, while that of the JVM is not necessarily
  */
 trait AdsCodecs {
   val bool: Codec[Boolean] = scodecs.bool(8)
@@ -53,7 +53,7 @@ trait AdsCodecs {
   /**
    * Codec for a string of a non-default length
    *
-    * @return
+   * @return
    */
   def stringN(maxLength: Int): Codec[String] =
     scodecs.cstring
@@ -70,7 +70,7 @@ trait AdsCodecs {
   /**
    * Codec for an array of variables of a fixed length
    *
-    * @param length Length of the array
+   * @param length Length of the array
    * @param elementCodec Codec for the individual elements of the array
    */
   def array[T](length: Int, elementCodec: Codec[T]): Codec[List[T]] =
