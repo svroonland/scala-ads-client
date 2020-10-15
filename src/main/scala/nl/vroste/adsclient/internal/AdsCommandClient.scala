@@ -56,14 +56,6 @@ final class AdsCommandClient(
       (runCommand[AdsWriteCommandResponse](_).unit)
 
   def getNotificationHandle(
-    variableHandle: VariableHandle,
-    length: Long,
-    maxDelay: Long,
-    cycleTime: Long
-  ): AdsT[NotificationHandle] =
-    getNotificationHandle(IndexGroups.ReadWriteSymValByHandle, variableHandle.value, length, maxDelay, cycleTime)
-
-  def getNotificationHandle(
     indexGroup: Long,
     indexOffset: Long,
     length: Long,
@@ -86,13 +78,6 @@ final class AdsCommandClient(
     runCommand[AdsDeleteDeviceNotificationCommandResponse] {
       AdsDeleteDeviceNotificationCommand(notificationHandle.value)
     }.unit
-
-  def writeToVariable(variableHandle: VariableHandle, value: BitVector): AdsT[Unit] =
-    write(
-      indexGroup = IndexGroups.ReadWriteSymValByHandle,
-      indexOffset = variableHandle.value,
-      value
-    )
 
   def write(indexGroup: Long, indexOffset: Long, value: BitVector): AdsT[Unit] =
     runCommand[AdsWriteCommandResponse] {
@@ -120,7 +105,7 @@ final class AdsCommandClient(
       _        <- checkResponse(response)
     } yield response
 
-  def createPacket(command: AdsCommand, invokeId: Int): AmsPacket =
+  private def createPacket(command: AdsCommand, invokeId: Int): AmsPacket =
     AmsPacket(
       AmsHeader(
         amsNetIdTarget = settings.amsNetIdTarget,
@@ -135,7 +120,7 @@ final class AdsCommandClient(
       )
     )
 
-  def awaitResponse[R](p: Promise[AdsClientError, AmsPacket])(implicit classTag: ClassTag[R]): AdsT[R] =
+  private def awaitResponse[R](p: Promise[AdsClientError, AmsPacket])(implicit classTag: ClassTag[R]): AdsT[R] =
     for {
       response <- p.await.timeoutFail(ResponseTimeout)(settings.timeout)
       result   <- response.header.data match {
@@ -146,13 +131,13 @@ final class AdsCommandClient(
                   }
     } yield result
 
-  def checkErrorCode(errorCode: Long): AdsT[Unit] =
+  private def checkErrorCode(errorCode: Long): AdsT[Unit] =
     ZIO.fail(AdsErrorResponse(errorCode)).unless(errorCode == 0L)
 
   def checkErrorCodes(errorCodes: Seq[Long]): AdsT[Unit] =
     ZIO.foreach_(errorCodes)(checkErrorCode)
 
-  def checkResponse(r: AdsResponse): AdsT[Unit] = checkErrorCode(r.errorCode)
+  private def checkResponse(r: AdsResponse): AdsT[Unit] = checkErrorCode(r.errorCode)
 
   private val generateInvokeId: UIO[Int] = invokeId.updateAndGet(_ + 1)
 }
@@ -253,20 +238,20 @@ object AdsCommandClient extends AdsCommandCodecs with AmsCodecs {
       values = encodedVarName
     )
 
-  def releaseVariableHandleCommand(handle: VariableHandle): Attempt[AdsWriteCommand] =
+  private def releaseVariableHandleCommand(handle: VariableHandle): Attempt[AdsWriteCommand] =
     for {
       encodedHandle <- Codec[VariableHandle].encode(handle)
     } yield AdsWriteCommand(indexGroup = IndexGroups.ReleaseSymHandle, indexOffset = 0x00000000, values = encodedHandle)
 
-  def readVariableCommand(handle: VariableHandle, size: Long): Attempt[AdsReadCommand] =
+  private def readVariableCommand(handle: VariableHandle, size: Long): Attempt[AdsReadCommand] =
     readCommand(IndexGroups.ReadWriteSymValByHandle, handle.value, size)
 
-  def readCommand(indexGroup: Long, indexOffset: Long, size: Long): Attempt[AdsReadCommand] =
+  private def readCommand(indexGroup: Long, indexOffset: Long, size: Long): Attempt[AdsReadCommand] =
     Attempt.successful {
       AdsReadCommand(indexGroup, indexOffset, readLength = size)
     }
 
-  def writeVariableCommand(handle: VariableHandle, value: BitVector): Attempt[AdsWriteCommand] =
+  private def writeVariableCommand(handle: VariableHandle, value: BitVector): Attempt[AdsWriteCommand] =
     Attempt.successful {
       AdsWriteCommand(IndexGroups.ReadWriteSymValByHandle, indexOffset = handle.value, values = value)
     }
@@ -306,16 +291,13 @@ object AdsCommandClient extends AdsCommandCodecs with AmsCodecs {
       values       = BitVector.concat(subCommands.map(_.values))
     } yield AdsSumWriteCommand(subCommands, values)
 
-  def splitBitVectorAtPositions(bitVector: BitVector, lengthsInBits: List[Long]): List[BitVector] =
+  private def splitBitVectorAtPositions(bitVector: BitVector, lengthsInBits: List[Long]): List[BitVector] =
     lengthsInBits
       .foldLeft((bitVector, List.empty[BitVector])) { case ((remaining, acc), length) =>
         val (value, newRemaining) = remaining.splitAt(length)
         (newRemaining, acc :+ value)
       }
       ._2
-
-  // Weird construct to prevent unused param warning for 'first'
-  def keepSecond[U](first: Any, second: U): U = first match { case _ => second }
 
   private def decodeStream[R, S: Codec](stream: ZStream[R, Exception, Byte]): ZStream[R, AdsClientError, S] =
     ZStreamScodecOps.decodeStream(stream.mapError[AdsClientError](AdsClientException(_)), DecodingError.apply)(
