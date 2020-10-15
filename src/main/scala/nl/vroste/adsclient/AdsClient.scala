@@ -61,6 +61,8 @@ object AdsClient {
     /**
      * Create a handle to many PLC variables for reading and writing
      *
+     * Uses ADS Sum commands for efficient reading and writing of many variables at once
+     *
      * @param variables List of variable names and codecs
      * @tparam T Scala type of the variable list
      * @return Managed resource that can be used for reading, writing and notifications
