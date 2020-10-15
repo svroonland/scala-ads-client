@@ -27,9 +27,8 @@ object CodecUtil {
      * Turns a Seq[Decoder[T]] into a Decoder[Seq[T]]
      */
     def sequence: Decoder[Seq[T]] =
-      decoders.foldLeft(provide(Seq[T]()).asDecoder) {
-        case (accCodec, currCodec) =>
-          accCodec.flatMap(acc => currCodec.map(curr => acc :+ curr))
+      decoders.foldLeft(provide(Seq[T]()).asDecoder) { case (accCodec, currCodec) =>
+        accCodec.flatMap(acc => currCodec.map(curr => acc :+ curr))
       }
   }
 

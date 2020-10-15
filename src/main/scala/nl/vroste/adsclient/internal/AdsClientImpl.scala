@@ -68,9 +68,9 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
   /**
    * Creates an observable that emits whenever an ADS notification is received
    *
-    * A symbol handle and device notification are created and cleaned up when the observable terminates.
+   * A symbol handle and device notification are created and cleaned up when the observable terminates.
    *
-    * @param varName PLC variable name
+   * @param varName PLC variable name
    * @param codec   Codec between scala value and PLC value
    * @tparam T Type of the value
    * @return
@@ -122,10 +122,10 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
   /**
    * Creates a consumer that writes elements to a PLC variable
    *
-    * A symbol handle is created when the first value is consumed and cleaned up when
+   * A symbol handle is created when the first value is consumed and cleaned up when
    * there are no more values to consume.
    *
-    * @param varName PLC variable name
+   * @param varName PLC variable name
    * @param codec   Codec between scala value and PLC value
    * @tparam T Type of the value
    * @return
@@ -149,7 +149,7 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
   /**
    * Creates a task that produces a T based on a function that takes a variable handle
    *
-    * The handle is created before the task is executed and released just before the task completes
+   * The handle is created before the task is executed and released just before the task completes
    */
   private def withVariableHandle[T](varName: String)(block: VariableHandle => Task[T]): Task[T] = {
     val acquire = acquireResource(client.getVariableHandle(varName))
@@ -167,7 +167,7 @@ class AdsClientImpl(client: AdsCommandClient) extends AdsClient {
   /**
    * Closes the socket connection after waiting for any acquired resources to be released
    *
-    * @return
+   * @return
    */
   override def close(): Task[Unit] =
     for {

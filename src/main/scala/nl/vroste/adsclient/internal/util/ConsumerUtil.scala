@@ -9,11 +9,11 @@ object ConsumerUtil {
    * Creates a [[Consumer]] that creates a resource before handling the first element and cleans it up after
    * handling the last element.
    *
-    * Takes as argument a consumer that takes a tuple of the resource and a value
+   * Takes as argument a consumer that takes a tuple of the resource and a value
    *
-    * The resource is created by a task that is memoized
+   * The resource is created by a task that is memoized
    *
-    * @param acquire Create the resource asychronously. The result is memoized
+   * @param acquire Create the resource asychronously. The result is memoized
    * @param release Cleanup the resource after the last
    * @param inner   Consumer for tuples of the resource and a value
    * @tparam T Type of elements to consume

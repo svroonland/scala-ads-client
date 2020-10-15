@@ -25,11 +25,11 @@ case class AdsNotificationSampleWithTimestamp(handle: Long, timestamp: Instant, 
 /**
  * Responsible for encoding and executing single ADS commands and decoding their response
  *
-  * Also provides all device notifications as an Observable
+ * Also provides all device notifications as an Observable
  *
-  * An inner implementation layer of [[AdsClient]]
+ * An inner implementation layer of [[AdsClient]]
  *
-  * @param scheduler Execution context for reading responses
+ * @param scheduler Execution context for reading responses
  */
 class AdsCommandClient(settings: AdsConnectionSettings, socketClient: AsyncSocketChannelClient)(implicit
   scheduler: Scheduler
@@ -231,8 +231,8 @@ object AdsCommandClient extends AdsCommandCodecs {
     for {
       encodedVarNames <- variables.map(AdsCodecs.string.encode).sequence
       commands         = encodedVarNames.map(
-                   AdsWriteReadCommand(IndexGroups.GetSymHandleByName, indexOffset = 0x00000000, readLength = 4, _)
-                 )
+                           AdsWriteReadCommand(IndexGroups.GetSymHandleByName, indexOffset = 0x00000000, readLength = 4, _)
+                         )
     } yield AdsSumWriteReadCommand(commands)
 
   def readVariablesCommand(handlesAndLengths: Seq[(VariableHandle, Long)]): Attempt[AdsSumReadCommand] =
@@ -264,10 +264,9 @@ object AdsCommandClient extends AdsCommandCodecs {
 
   def splitBitVectorAtPositions(bitVector: BitVector, lengthsInBits: List[Long]): List[BitVector] =
     lengthsInBits
-      .foldLeft((bitVector, List.empty[BitVector])) {
-        case ((remaining, acc), length) =>
-          val (value, newRemaining) = remaining.splitAt(length)
-          (newRemaining, acc :+ value)
+      .foldLeft((bitVector, List.empty[BitVector])) { case ((remaining, acc), length) =>
+        val (value, newRemaining) = remaining.splitAt(length)
+        (newRemaining, acc :+ value)
       }
       ._2
 

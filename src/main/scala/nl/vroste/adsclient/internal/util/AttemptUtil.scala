@@ -21,12 +21,12 @@ object AttemptUtil {
     /**
      * Turn a Seq[Attempt[T]] into an Attempt[Seq[T]]
      *
-      * If any of the attempts have failed, the result will be a failed attempt
+     * If any of the attempts have failed, the result will be a failed attempt
      * @return
      */
     def sequence: Attempt[Seq[T]] =
-      seq.foldLeft(Attempt.successful(Seq.empty[T])) {
-        case (as, a) => as.flatMap(s => a.map(s :+ _))
+      seq.foldLeft(Attempt.successful(Seq.empty[T])) { case (as, a) =>
+        as.flatMap(s => a.map(s :+ _))
       }
   }
 }
