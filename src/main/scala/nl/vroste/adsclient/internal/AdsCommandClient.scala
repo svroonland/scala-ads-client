@@ -183,7 +183,7 @@ object AdsCommandClient extends AdsCommandCodecs with AmsCodecs {
    * @return
    */
   def runLoop(
-    inputStream: ZStream[Clock, Exception, Chunk[Byte]]
+    inputStream: ZStream[Clock, Exception, Byte]
   ): ZManaged[Clock, Nothing, (ResponseListeners, NotificationListeners)] =
     for {
       substreams <- decodeStream(inputStream)(amsPacketCodec).broadcast(2, 10)
@@ -313,7 +313,7 @@ object AdsCommandClient extends AdsCommandCodecs with AmsCodecs {
   // Weird construct to prevent unused param warning for 'first'
   def keepSecond[U](first: Any, second: U): U = first match { case _ => second }
 
-  private def decodeStream[R, S: Codec](stream: ZStream[R, Exception, Chunk[Byte]]): ZStream[R, AdsClientError, S] =
+  private def decodeStream[R, S: Codec](stream: ZStream[R, Exception, Byte]): ZStream[R, AdsClientError, S] =
     ZStreamScodecOps.decodeStream(stream.mapError[AdsClientError](AdsClientException(_)), DecodingError.apply)(
       implicitly[Codec[S]]
     )

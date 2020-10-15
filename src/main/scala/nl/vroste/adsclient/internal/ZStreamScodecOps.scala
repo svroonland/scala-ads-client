@@ -18,10 +18,11 @@ object ZStreamScodecOps {
    * @return
    */
   def decodeStream[R, E, E1 >: E, S: Codec](
-    stream: ZStream[R, E, Chunk[Byte]],
+    stream: ZStream[R, E, Byte],
     decodingError: Err => E1
   ): ZStream[R, E1, S] =
     stream
+      .mapChunks(Chunk.single)
       .map(BitVector(_))
       //      .tap(bits => ZIO.effectTotal(println(s"Got packet ${bits.toHex}")))
       .mapAccumM[R, E1, BitVector, Seq[S]](BitVector.empty) { (acc, curr) =>

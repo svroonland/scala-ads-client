@@ -229,18 +229,18 @@ object AdsClient {
       new AdsCommandClient(settings, writeQueue, invokeIdRef, notificationListeners, responseListeners)
     )
 
+  val live: ZLayer[Clock with Has[AdsConnectionSettings], Exception, Has[Service]] =
+    ZLayer.fromServiceManaged[AdsConnectionSettings, Clock, Exception, Service](connect)
+
   private def writeLoop(
     channel: AsynchronousSocketChannel,
     queue: Queue[Chunk[Byte]]
-  ): ZManaged[Any, Nothing, Fiber.Runtime[Exception, Nothing]] =
-    (for {
-      bytes <- queue.take
-      _     <- channel.writeChunk(bytes)
-    } yield ()).forever.toManaged_.fork
+  ): ZManaged[Any, Nothing, Fiber.Runtime[Exception, Unit]] =
+    ZStream.fromQueue(queue).mapM(channel.writeChunk).runDrain.forkManaged
 
   val maxFrameSize   = 1024
   val writeQueueSize = 10
 
-  private def createInputStream(channel: AsynchronousSocketChannel): ZStream[Clock, Exception, Chunk[Byte]] =
-    ZStream.fromEffect(channel.readChunk(maxFrameSize).retry(Schedule.forever)).forever
+  private def createInputStream(channel: AsynchronousSocketChannel): ZStream[Clock, Exception, Byte] =
+    ZStream.repeatEffectChunk(channel.readChunk(maxFrameSize).retry(Schedule.forever))
 }
