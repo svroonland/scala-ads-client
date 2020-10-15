@@ -8,7 +8,7 @@ import enumeratum._
 /**
  * Minor data types, enums
  *
-  * Import nl.vroste.adsclient._ to get access to all data types needed for working with the client
+ * Import nl.vroste.adsclient._ to get access to all data types needed for working with the client
  */
 package object adsclient extends AdsCodecs {
   type ErrorCode = Long
@@ -58,7 +58,7 @@ package object adsclient extends AdsCodecs {
   /**
    * A notification of a change in a variable
    *
-    * @param value Reported value of the variable
+   * @param value Reported value of the variable
    * @param timestamp Time as reported by the ADS server
    * @tparam T Type of the value
    */

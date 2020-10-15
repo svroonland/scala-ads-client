@@ -8,7 +8,7 @@ import scodec.{ Attempt, Decoder }
 /**
  * Responses from the ADS server
  *
-  * Mostly responses to commands, but also autonomously sent notifications
+ * Mostly responses to commands, but also autonomously sent notifications
  */
 sealed trait AdsResponse {
   val errorCode: Long

@@ -13,7 +13,7 @@ class CountingSemaphore {
   /**
    * Increment the count atomically
    *
-    * @return
+   * @return
    */
   def increment: Task[Unit] =
     withLock {
@@ -30,7 +30,7 @@ class CountingSemaphore {
   /**
    * Decrement the count atomically
    *
-    * @return
+   * @return
    */
   def decrement: Task[Unit] =
     withLock {
