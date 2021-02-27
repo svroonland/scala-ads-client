@@ -4,7 +4,7 @@ lazy val root = (project in file(".")).settings(
   inThisBuild(
     List(
       organization := "nl.vroste",
-      scalaVersion := "2.12.12",
+      scalaVersion := "2.12.13",
       version := "0.1.0-SNAPSHOT",
       name := "scala-ads-client"
     )
