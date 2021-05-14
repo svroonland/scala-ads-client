@@ -12,7 +12,7 @@ lazy val root = (project in file(".")).settings(
   name := "Scala ADS client",
   libraryDependencies ++= Seq(
     "io.monix"        %% "monix-nio"   % "0.0.9",
-    "io.monix"        %% "monix"       % "3.3.0",
+    "io.monix"        %% "monix"       % "3.4.0",
     "com.beachape"    %% "enumeratum"  % "1.6.1",
     "org.scodec"      %% "scodec-bits" % "1.1.26",
     "org.scodec"      %% "scodec-core" % "1.11.7"
