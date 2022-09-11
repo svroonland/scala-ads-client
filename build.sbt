@@ -15,7 +15,7 @@ lazy val root = (project in file(".")).settings(
     "io.monix"        %% "monix"       % "3.4.1",
     "com.beachape"    %% "enumeratum"  % "1.7.0",
     "org.scodec"      %% "scodec-bits" % "1.1.34",
-    "org.scodec"      %% "scodec-core" % "1.11.9"
+    "org.scodec"      %% "scodec-core" % "1.11.10"
   ) ++ scalaTest.map(_ % Test)
 )
 
